@@ -56,7 +56,7 @@ class ManifoldClassifier(BaseEstimator, ClassifierMixin):
                 core.fit_manifolds(**self.fit_manifold_config)
 
             core.cluster_by_gmm(**cluster_config)
-            core.analyze_typical(use_dim=self.use_dim, analyze_dist=self.classify_config.get("dist_type", "default"))
+            core.analyze_typical(use_dim=self.use_dim, analyze_dist=self.classify_config.get("dist_type", "default"), **self.analyze_config)
 
         self.mixed_core = sum(self.cores[1:], start=self.cores[0])
         self.mixed_nodes = np.cumsum([c.clusterer.n_components for c in self.cores])[:-1]

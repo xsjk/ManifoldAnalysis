@@ -109,9 +109,9 @@ class Core:
     def fit_manifolds(
         self,
         split_config: dict = dict(constraint=200),
-        analyse_config: dict = dict(mode="Plane&Sphere"),
+        analyze_config: dict = dict(),
         n_jobs: int = 16,
-        progress_bar=False,
+        progress_bar: bool = False,
     ) -> ComponentGroups:
 
         self.component_groups = ComponentGroups(
@@ -119,7 +119,7 @@ class Core:
                 delayed(ComponentGroup.fit)(
                     data=self.data[i],
                     split_config=split_config,
-                    analyse_config=analyse_config,
+                    analyze_config=analyze_config,
                     component_config=dict(
                         personID=i, dataType=self.dataType[i], data=self.data[i]
                     ),

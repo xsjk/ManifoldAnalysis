@@ -458,13 +458,13 @@ class ComponentGroup:
 
     @staticmethod
     def fit(
-        data, split_config={}, analyse_config={}, component_config={}
+        data, split_config={}, analyze_config={}, component_config={}
     ) -> "ComponentGroup":
         components = dataSplit2Components(
             data, **split_config, component_config=component_config
         )
         for comp in components:
-            comp.analysis(data=data, **analyse_config)
+            comp.analysis(data=data, **analyze_config)
         return ComponentGroup(components)
 
 
@@ -604,14 +604,6 @@ def encodeData(point, l=-5, r=15) -> int:
     #     + int(point[3])
     return int(index)
 
-
-def is_single_box_adjacent(box_a, box_b):
-    for i in range(DIMENSION):
-        if abs(box_a[i] - box_b[i]) > 1:
-            return False
-    return True
-
-
 def dataSplit2Components(
     data, l=-5, r=15, constraint=100, scale=1, component_config: dict = {}
 ) -> list[Component]:
@@ -637,96 +629,3 @@ def dataSplit2Components(
     # print(comp_list[1].__dict__)
     return comp_list
 
-
-def loadComponentFromFile(file, **kwargs) -> list[Component]:
-    """
-    load the components of a file from json
-
-    Parameters
-    ----------
-    file : str
-        the file path
-    **kwargs : dict
-        the additional attributes that will be passed to the Component class constructor
-
-    Returns
-    -------
-    list[Component]
-    """
-    with open(file, "r") as f:
-        data = f.read().strip()
-
-    components = []
-    for line in data.split(",\n"):
-        component_dict = json.loads(line.strip(",")) | kwargs
-        # print(component_dict)
-        component = Component(**component_dict)
-        components.append(component)
-        # print(component)
-    return components
-
-
-def loadComponentFromDir(dir, **kwargs) -> list[list[Component]]:
-    """
-    load the components of a directory from json
-
-    Parameters
-    ----------
-    dir : str
-        the directory path
-    **kwargs : dict
-        the additional attributes that will be passed to the Component class constructor
-
-    Returns
-    -------
-    list[list[Component]]
-    """
-    return [
-        loadComponentFromFile(file=os.path.join(dir, file), personID=i, **kwargs)
-        for i, file in enumerate(
-            filter(lambda f: f.endswith(".json"), sorted(os.listdir(dir)))
-        )
-    ]
-
-
-def analysis(data):
-    LOSSTHRESHOLD = 0.1
-    CONSTRAINT = 200
-    import csv
-
-    with open("./Desktop/generated_data/protein_coding_ID.csv", "r") as file:
-        reader = csv.reader(file)
-        first_column = [row[0] for row in reader][1:]
-        ind = [int(_) for _ in first_column]
-    # data is 23201 * 4, add index to it to make it 23201 * 5   0~23200 is the index
-    data = np.hstack((data, np.array([i for i in range(len(data))]).reshape(-1, 1)))
-    data_2 = data[ind]
-    # print(data_2)
-    list_tmp = dataSplit2Components(data_2, constraint=CONSTRAINT)
-    comps = []
-    for i, compi in enumerate(list_tmp):
-        compi.analysis(data=data, mode="Plane&Sphere")
-        assert isinstance(compi.loss, float)
-        if compi.loss > LOSSTHRESHOLD:
-            continue
-        comps.append(compi)
-
-    return comps
-
-
-if __name__ == "__main__":
-
-    # dataSplit2Components test
-    data = np.load("data/AD.npy")
-    print(dataSplit2Components(data[0]))
-
-    # # ComponentGroup test
-    # import plotly.express as px
-
-    # people_components = ComponentGroups('analysis/3dim/AD_each/Plane&Sphere200/', dataType='AD', usedim=[0,1,2])
-    # group = people_components[27]
-
-    # samples, shapes = group.resample(1000, return_shape=True)
-    # figure = px.scatter_3d(
-    #     x=samples[:, 0], y=samples[:, 1], z=samples[:, 2], color=shapes)
-    # figure.show()
