@@ -12,3 +12,9 @@ wheels/
 # uv
 uv.lock
 .python-version
+
+# Analysis results
+*.nc
+
+# vscode
+.vscode/
