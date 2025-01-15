@@ -653,19 +653,32 @@ def load_cv_result(path: str) -> xr.DataArray:
     recall_neg = recall_macro * 2 - recall
 
     F = 1 / (1 + 1 / (1 / precision + 1 / recall - 2) + 1 / (1 / recall_neg + 1 / precision_neg - 2))
-    1 - F
+    T = 1 - F
     TP = (1 / (1 / precision + 1 / recall - 2)) * F
     TN = (1 / (1 / precision_neg + 1 / recall_neg - 2)) * F
     FP = (1 / precision - 1) * TP
     FN = (1 / recall - 1) * TP
 
+    FNR = FN / (FN + TP)
+    FPR = FP / (FP + TN)
+    TPR = TP / (TP + FN)
+    TNR = TN / (TN + FP)
+    MCC = (TP * TN - FP * FN) / np.sqrt((TP + FP) * (TP + FN) * (TN + FP) * (TN + FN))
+
     FP = FP.assign_coords(metric='FP')
     FN = FN.assign_coords(metric='FN')
     TP = TP.assign_coords(metric='TP')
     TN = TN.assign_coords(metric='TN')
+
+    FNR = FNR.assign_coords(metric='FNR')
+    FPR = FPR.assign_coords(metric='FPR')
+    TPR = TPR.assign_coords(metric='TPR')
+    TNR = TNR.assign_coords(metric='TNR')
+    MCC = MCC.assign_coords(metric='MCC')
+
     other_metrics = xr.concat(
-        [TP, FN, FP, TN],
-        dim=pd.Index(['test_TP', 'test_FN', 'test_FP', 'test_TN'], name='metric')
+        [TP, FN, FP, TN, TPR, FNR, FPR, TNR, MCC],
+        dim=pd.Index(['test_TP', 'test_FN', 'test_FP', 'test_TN', 'test_TPR', 'test_FNR', 'test_FPR', 'test_TNR', 'test_MCC'], name='metric')
     )
     cv_scores = xr.concat([cv_scores, other_metrics], dim='metric')
 
