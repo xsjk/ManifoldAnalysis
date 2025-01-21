@@ -3,11 +3,12 @@ name = "manifoldanalysis"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.13"
 dependencies = [
+    "cupy-cuda12x>=13.3.0",
+    "cuvs-cu12>=24.12.0",
     "ipykernel>=6.29.5",
     "matplotlib>=3.10.0",
-    "pandas>=2.2.3",
     "plotly>=5.24.1",
     "rich>=13.9.4",
     "scikit-learn>=1.6.0",
