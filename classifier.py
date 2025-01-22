@@ -6,10 +6,10 @@ from sklearn.model_selection import StratifiedKFold
 from component import ComponentGroups
 from core import Core, use_dim_type
 from typing import Any, Literal
-from sklearn.base import BaseEstimator, ClassifierMixin
+from sklearn.base import BaseEstimator, ClassifierMixin, is_classifier
 
 
-class ManifoldClassifier(BaseEstimator, ClassifierMixin):
+class ManifoldClassifier(ClassifierMixin, BaseEstimator):
 
     use_dim: use_dim_type
     manifolds_cache: ComponentGroups
@@ -83,6 +83,7 @@ class ManifoldClassifier(BaseEstimator, ClassifierMixin):
         return (self.predict(X) == y).mean()
 
 
+assert is_classifier(ManifoldClassifier("4D4D", [], {}, {}))
 
 if __name__ == "__main__":
 
@@ -104,8 +105,7 @@ if __name__ == "__main__":
 
     data_AD = np.load("data/AD.npy")
     data_NL = np.load("data/Normal.npy")
-    protein_coding_indices = pd.read_csv(
-        'Desktop/generated_data/protein_coding_ID.csv', index_col=0).index.to_numpy()
+    protein_coding_indices = pd.read_csv('data/protein_coding_ID.csv', index_col=0).index.to_numpy()
 
     X = np.concatenate([data_AD, data_NL], axis=0)
     y = np.concatenate([np.ones(len(data_AD), dtype=np.int8),
@@ -268,7 +268,7 @@ if __name__ == "__main__":
                     score_agg_method=score_agg_method,
                     dist_type=dist_type
                 ),
-            ), X, y, cv=cv, # type: ignore
+            ), X, y, cv=cv, n_jobs=1,# type: ignore
             scoring=scoring
         )
 
