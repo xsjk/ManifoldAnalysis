@@ -3,7 +3,6 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 import os
-import json
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from matplotlib.gridspec import GridSpec
@@ -14,104 +13,6 @@ from plotly import graph_objects as go
 from itertools import product
 from sklearn.metrics import auc, roc_curve, precision_recall_curve, confusion_matrix, accuracy_score, precision_score, recall_score, f1_score, jaccard_score, balanced_accuracy_score, average_precision_score
 from sklearn.preprocessing import label_binarize
-
-
-def file2data(file: str, sheet=0, withIndex=True) -> np.ndarray:
-    """
-    load data from excel file
-
-    Parameters
-    ----------
-    file : str
-        file name
-    sheet : int, optional
-        sheet number, by default 0
-    withIndex : bool, optional
-        whether to add index column, by default True
-
-    Returns
-    -------
-    np.ndarray (RNA, feature)
-
-    Examples
-    --------
-    >>> data = file2data("./Desktop/AD/AMPAD_MSSM_0000003566.xlsx")
-    >>> data.shape
-    (23201, 4)
-    """
-    data = pd.read_excel(file, sheet_name=sheet).iloc[:, [1, 3, 4]].to_numpy()
-    if withIndex:
-        data = np.hstack((data, np.arange(len(data)).reshape(-1, 1)))
-    return data
-
-
-def csvfile2data(file: str, withIndex=True) -> np.ndarray:
-    data = pd.read_csv(file).iloc[:, 1:].to_numpy()
-    if withIndex:
-        data = np.hstack((data, np.arange(len(data)).reshape(-1, 1)))
-    return data
-
-
-def file2title(file: str, sheet=0):
-    title = pd.read_excel(file, sheet_name=sheet).iloc[:, :1].to_numpy()
-    return title
-
-
-def traverse_dir(url=".") -> list:
-    """
-    traverse directory
-
-    Parameters
-    ----------
-    url : str, optional
-        directory url, by default "."
-    Returns
-    -------
-    list
-        file names
-    """
-    return [file[:-5] for file in os.listdir(url) if file.startswith("A")]
-
-
-def load_all(file: str) -> np.ndarray:
-    """
-    load all data from binary file
-
-    Parameters
-    ----------
-    file : str
-        file name
-
-    Returns
-    -------
-    np.ndarray (person, RNA, feature)
-
-    Examples
-    --------
-    >>> AD = load_all("AD")
-    >>> AD.shape
-    (86, 23201, 4)
-    >>> Normal = load_all("Normal")
-    >>> Normal.shape
-    (36, 23201, 4)
-    """
-    return np.load(f"./data/{file}.npy")
-
-
-def getResampledData(file):
-    with open(file, "r") as f:
-        data = f.read().strip()
-
-    _all_points = []
-    for i, line in enumerate(data.split(",\n")):
-        component_dict = json.loads(line.strip(','))
-        # # print(component_dict)
-        dda = np.array(component_dict[str(i)])
-        # concatenate all dda
-        _all_points.append(dda)
-
-    # print(all_points.shape)
-    return _all_points
 
 
 def plot_matrix(mat: np.ndarray, classes: list[str], *, normalize=False, ax: Axes | None = None, cmap="Blues") -> Axes:
