@@ -138,7 +138,7 @@ class Component:
         self.dataType = dataType
         self.personID = personID
 
-    def analysis(self, data, mode="PlaneOnly", checkbox=False, verbose=False):
+    def analysis(self, data, mode="Plane&Sphere", checkbox=False, verbose=False):
         assert self.dataIndex is not None
         data_comp = np.array([data[i] for i in self.dataIndex])
         if checkbox:
