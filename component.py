@@ -61,8 +61,8 @@ class Component:
     def __init__(
         self,
         box=None,
-        dataIndex: list | None = None,
-        shape: Shape | None = None,
+        dataIndex: list = None,
+        shape: Shape = None,
         param1=None,
         param2=None,
         param3=None,
@@ -70,7 +70,7 @@ class Component:
         dataType=None,
         personID=...,
         usedim=...,
-        data: np.ndarray | None = None,
+        data: np.ndarray = None,
     ) -> None:
         """
         Parameters
@@ -272,7 +272,7 @@ class Component:
     def get_typical_indices(
         self,
         top_k: int,
-        selectable_indices: np.ndarray | None = None
+        selectable_indices: np.ndarray = None
     ) -> np.ndarray:
         '''
         Get the typical indices of the component
@@ -349,7 +349,7 @@ class ComponentGroup:
         return iter(self.components)
 
     def resample(
-        self, size: int, return_shape=False, random_state: int | None = None
+        self, size: int, return_shape=False, random_state: int = None
     ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
         """
         Sample points on the fitted geometries, with the number of points proportional to the area of the geometries
@@ -471,7 +471,7 @@ class ComponentGroup:
     def get_typical_indices(
         self,
         top_k: int,
-        selectable_indices: np.ndarray | None = None,
+        selectable_indices: np.ndarray = None,
     ) -> np.ndarray:
         '''
         Get the typical indices of the components in the group

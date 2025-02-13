@@ -10,7 +10,7 @@ from matplotlib.colors import Normalize
 
 class GMMClusterer:
 
-    def __init__(self, n_components: int | Iterable[int] = range(3, 10), random_state: int | None = None):
+    def __init__(self, n_components: int | Iterable[int] = range(3, 10), random_state: int = None):
         """
         Initializes the GMMClusterer with the given number of components.
 
@@ -226,7 +226,7 @@ class GMMClusterer:
 
 class MDSClusterer:
 
-    def __init__(self, hidden_dim: int | None = None, k: int | Literal['silhouette', 'davies_bouldin'] = 'silhouette'):
+    def __init__(self, hidden_dim: int = None, k: int | Literal['silhouette', 'davies_bouldin'] = 'silhouette'):
         '''
         Initializes the MDSClusterer with the given number of hidden dimensions.
 
@@ -294,7 +294,7 @@ class MDSClusterer:
         embedding = self.get_embedding(X)
         return self.kmeans.predict(embedding)
 
-    def plot(self, X: np.ndarray | None = None, cmap: str | Colormap | None = None, random_state: int | None = None) -> 'MDSClusterer':
+    def plot(self, X: np.ndarray = None, cmap: str | Colormap = None, random_state: int = None) -> 'MDSClusterer':
         '''
         Plots the embedding of the data by scattering the TSNE reduced 2D points with the cluster colors.
 

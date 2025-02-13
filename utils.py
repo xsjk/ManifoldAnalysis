@@ -15,7 +15,7 @@ from sklearn.metrics import auc, roc_curve, precision_recall_curve, confusion_ma
 from sklearn.preprocessing import label_binarize
 
 
-def plot_matrix(mat: np.ndarray, classes: list[str], *, normalize=False, ax: Axes | None = None, cmap="Blues") -> Axes:
+def plot_matrix(mat: np.ndarray, classes: list[str], *, normalize=False, ax: Axes = None, cmap="Blues") -> Axes:
     '''
     This function prints and plots the confusion matrix.
 
@@ -63,7 +63,7 @@ def plot_matrix(mat: np.ndarray, classes: list[str], *, normalize=False, ax: Axe
     return ax
 
 
-def plot_confusion_matrix(y_true: np.ndarray, y_pred: np.ndarray, *, normalize: Literal["true", "pred", "all"] | None = "true", ax: Axes | None = None, cmap='Blues', names: list[str] | None = None) -> Axes:
+def plot_confusion_matrix(y_true: np.ndarray, y_pred: np.ndarray, *, normalize: Literal["true", "pred", "all"] | None = "true", ax: Axes = None, cmap='Blues', names: list[str] = None) -> Axes:
     """
     Plot confusion matrix for the given classifier.
 
@@ -95,7 +95,7 @@ def plot_confusion_matrix(y_true: np.ndarray, y_pred: np.ndarray, *, normalize: 
     return ax
 
 
-def plot_confusion_matrix_hetro(y_true: np.ndarray, y_pred: np.ndarray, *, normalize: Literal["true", "pred", "all"] | None = "true", ax: Axes | None = None, cmap: str | Colormap = 'Blues', names: list[str] | None = None) -> Axes:
+def plot_confusion_matrix_hetro(y_true: np.ndarray, y_pred: np.ndarray, *, normalize: Literal["true", "pred", "all"] | None = "true", ax: Axes = None, cmap: str | Colormap = 'Blues', names: list[str] = None) -> Axes:
     """
     Plot confusion matrix for the given classifier.
 
@@ -198,7 +198,7 @@ def plot_confusion_matrix_hetro(y_true: np.ndarray, y_pred: np.ndarray, *, norma
     return ax
 
 
-def plot_roc_curve(y_true: np.ndarray, y_score: np.ndarray, *, ax: Axes | None = None, axes: list[Axes] | None = None, subplot=False, cmap='tab10') -> Axes | list[Axes]:
+def plot_roc_curve(y_true: np.ndarray, y_score: np.ndarray, *, ax: Axes = None, axes: list[Axes] = None, subplot=False, cmap='tab10') -> Axes | list[Axes]:
     """
     Plot ROC curve for the given classifier.
 
@@ -281,7 +281,7 @@ def plot_roc_curve(y_true: np.ndarray, y_score: np.ndarray, *, ax: Axes | None =
         return ax
 
 
-def plot_precision_recall_curve(y_true: np.ndarray, y_score: np.ndarray, *, ax: Axes | None = None, axes: list[Axes] | None = None, subplot=False, cmap='tab10') -> Axes | list[Axes]:
+def plot_precision_recall_curve(y_true: np.ndarray, y_score: np.ndarray, *, ax: Axes = None, axes: list[Axes] = None, subplot=False, cmap='tab10') -> Axes | list[Axes]:
     """
     Plot precision-recall curve for the given classifier.
 
@@ -366,7 +366,7 @@ def plot_precision_recall_curve(y_true: np.ndarray, y_score: np.ndarray, *, ax: 
         return ax
 
 
-def show_classification_result(true_label: np.ndarray, pred_scores: np.ndarray, pred_label: np.ndarray | None = None, *, axes: None | tuple[Axes, Axes, Axes] = None, normalize: Literal["true", "pred", "all"] | None = "true", names: list[str] | None = None) -> tuple[Axes, Axes, Axes]:
+def show_classification_result(true_label: np.ndarray, pred_scores: np.ndarray, pred_label: np.ndarray = None, *, axes: None | tuple[Axes, Axes, Axes] = None, normalize: Literal["true", "pred", "all"] | None = "true", names: list[str] = None) -> tuple[Axes, Axes, Axes]:
     '''
     Show classification result
 
@@ -432,7 +432,7 @@ def show_classification_result(true_label: np.ndarray, pred_scores: np.ndarray, 
     return ax1, ax2, ax3
 
 
-def plot_bincount(labels: np.ndarray, ax: Axes | None = None, normalize: bool = False, title: str = "Class Distribution") -> Axes:
+def plot_bincount(labels: np.ndarray, ax: Axes = None, normalize: bool = False, title: str = "Class Distribution") -> Axes:
     '''
     Plot the bin count of the labels
 

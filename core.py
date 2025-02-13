@@ -93,7 +93,7 @@ class Core:
         self,
         data: np.ndarray,
         dataType: str | np.ndarray,
-        component_groups: ComponentGroups | None = None,
+        component_groups: ComponentGroups = None,
     ):
         self.data = data
         if isinstance(dataType, str):
@@ -179,8 +179,8 @@ class Core:
     def analyze_typical_sphere(
         self,
         use_dim: use_dim_type,
-        typical_analyzer: typical_analyzer_type | None = None,
-        selectable_indices: np.ndarray | None = None,
+        typical_analyzer: typical_analyzer_type = None,
+        selectable_indices: np.ndarray = None,
         top_k: int = 20,
         verbose: bool = False,
     ):
@@ -276,8 +276,8 @@ class Core:
     def analyze_typical_plane(
         self,
         use_dim: use_dim_type,
-        typical_analyzer: typical_analyzer_type | None = None,
-        selectable_indices: np.ndarray | None = None,
+        typical_analyzer: typical_analyzer_type = None,
+        selectable_indices: np.ndarray = None,
         top_k: int = 20,
         verbose: bool = False,
     ):
@@ -373,8 +373,8 @@ class Core:
     def analyze_typical_hausdorff(
         self,
         use_dim: use_dim_type,
-        typical_analyzer: typical_analyzer_type | None = None,
-        selectable_indices: np.ndarray | None = None,
+        typical_analyzer: typical_analyzer_type = None,
+        selectable_indices: np.ndarray = None,
         top_k: int = 20,
         verbose: bool = False,
     ):
@@ -455,7 +455,7 @@ class Core:
             num_people=self.group_result.n_people,
         )
 
-    def analyze_typical_person(self, typical_analyzer: typical_analyzer_type | None = None) -> np.ndarray[tuple[int], np.dtype[np.integer]]:
+    def analyze_typical_person(self, typical_analyzer: typical_analyzer_type = None) -> np.ndarray[tuple[int], np.dtype[np.integer]]:
         """
         Analyze the typical person for each group
 
@@ -542,7 +542,7 @@ class Core:
     def classify_with_typical_sphere(
         self,
         use_dim: use_dim_type,
-        data: np.ndarray | None = None,
+        data: np.ndarray = None,
         score_agg_method: Literal["mean", "max", "min"] = "mean",
         verbose: bool = False,
         normalize_score: bool = True,
@@ -554,7 +554,7 @@ class Core:
         ----------
         use_dim: use_dim_type
             The dimension of the data to be classified
-        data: np.ndarray | None
+        data: np.ndarray
             The data to be classified, if None, self.data will be used
         score_agg_method: Literal["mean", "max", "min"]
             The method to aggregate the scores of different components
@@ -671,7 +671,7 @@ class Core:
     def classify_with_typical_plane(
         self,
         use_dim: use_dim_type,
-        data: np.ndarray | None = None,
+        data: np.ndarray = None,
         score_agg_method: Literal["mean", "max", "min"] = "mean",
         verbose: bool = False,
         normalize_score: bool = True,
@@ -683,7 +683,7 @@ class Core:
         ----------
         use_dim: use_dim_type
             The dimension of the data to be classified
-        data: np.ndarray | None
+        data: np.ndarray
             The data to be classified, if None, self.data will be used
         score_agg_method: Literal["mean", "max", "min"]
             The method to aggregate the scores of different components
@@ -800,7 +800,7 @@ class Core:
     def classify_with_typical_hausdorff(
         self,
         use_dim: use_dim_type,
-        data: np.ndarray | None = None,
+        data: np.ndarray = None,
         score_agg_method: Literal["mean", "max", "min"] = "mean",
         verbose: bool = False,
         normalize_score: bool = True,
@@ -812,7 +812,7 @@ class Core:
         ----------
         use_dim: use_dim_type
             The dimension of the data to be classified
-        data: np.ndarray | None
+        data: np.ndarray
             The data to be classified, if None, self.data will be used
         score_agg_method: Literal["mean", "max", "min"]
             The method to aggregate the scores of different components
@@ -920,7 +920,7 @@ class Core:
     def classify_with_typical(
         self,
         use_dim: use_dim_type,
-        data: np.ndarray | None = None,
+        data: np.ndarray = None,
         score_agg_method: Literal["mean", "max", "min"] = "mean",
         dist_type: analyze_dist_type = "default",
         verbose: bool = False,
@@ -933,7 +933,7 @@ class Core:
         ----------
         use_dim: use_dim_type
             The dimension of the data to be classified
-        data: np.ndarray | None
+        data: np.ndarray
             The data to be classified, if None, self.data will be used
         score_agg_method: Literal["mean", "max", "min"]
             The method to aggregate the scores of different components
