@@ -19,7 +19,7 @@ import pickle
 eps = np.finfo(np.float32).eps
 
 @dataclass
-class TypicalAnalysisData:
+class AnalysisData:
     people: np.ndarray
     distance_means: list[np.ndarray]
     distance_stds: list[np.ndarray]
@@ -30,8 +30,8 @@ class TypicalAnalysisData:
     def num_groups(self) -> int:
         return len(self.people)
 
-    def __add__(self, other: "TypicalAnalysisData") -> "TypicalAnalysisData":
-        return TypicalAnalysisData(
+    def __add__(self, other: "AnalysisData") -> "AnalysisData":
+        return AnalysisData(
             people=np.hstack([self.people, other.people + self.num_people]),
             distance_means=self.distance_means + other.distance_means,
             distance_stds=self.distance_stds + other.distance_stds,
@@ -81,9 +81,9 @@ class Core:
     feature_getter: feature_getter_type
     typical_analyzer: typical_analyzer_type
 
-    sphere_typical_data: dict[use_dim_type, TypicalAnalysisData]
-    plane_typical_data: dict[use_dim_type, TypicalAnalysisData]
-    hausdorff_typical_data: dict[use_dim_type, TypicalAnalysisData]
+    sphere_typical_data: dict[use_dim_type, AnalysisData]
+    plane_typical_data: dict[use_dim_type, AnalysisData]
+    hausdorff_typical_data: dict[use_dim_type, AnalysisData]
 
     pred_scores: np.ndarray
     pred_label: np.ndarray
@@ -176,41 +176,27 @@ class Core:
     def group_result(self) -> GroupResult:
         return self.cluster_result.group_result
 
-    def analyze_typical_sphere(
+
+    dist_f_map: dict[str, Callable] = {
+        "sphere": geometry.distance_to_spheres,
+        "plane": geometry.distance_to_planes,
+        "hausdorff": geometry.distance_to_pointsets,
+    }
+
+    def _analyze_impl(
         self,
         use_dim: use_dim_type,
-        typical_analyzer: typical_analyzer_type = None,
+        analyze_dist: analyze_dist_type,
+        people_indices: np.ndarray,
         selectable_indices: np.ndarray = None,
-        top_k: int = 20,
-        verbose: bool = False,
-    ):
-        """
-        Analyze the typical components for each group
+        top_k: int = 20
+    ) -> AnalysisData:
 
-        Parameters
-        ----------
-        use_dim : use_dim_type, optional
-            the dimension to use, by default '4D4D'
-            `1D1D` means 1D data and 1D center
-            `1D4D` means 1D data and 4D center
-            `4D4D` means 4D data and 4D center
-        typical_analyzer : Callable[[ComponentGroups, np.ndarray, np.ndarray], np.integer | int], optional
-            the function should take the component_groups, people indices, and the attr of cluster mean as input and return the typical person index, by default None
-            If None, the function to get the typical person, by default it gets the person with the attribute ( use self.feature_getter ) closest to the cluster mean
-        selectable_indices : np.ndarray, optional
-            the indices that can be selected, by default None, which means all the indices can be selected
-        top_k : int, optional
-            the number of components to select, by default 20
-        verbose : bool, optional
-            whether to print the information, by default False
-        """
+        distance_means = []
+        distance_stds = []
+        indices = []
 
-        typical_people = self.analyze_typical_person(typical_analyzer)
-        typical_distance_means = []
-        typical_distance_stds = []
-        typical_indices = []
-
-        dist_f = self.use_dim_decorator(use_dim)(geometry.distance_to_spheres)
+        dist_f = self.use_dim_decorator(use_dim)(self.dist_f_map[analyze_dist])
 
         if not hasattr(self, "cluster_result"):
             raise ValueError("The cluster_result has not been assigned yet")
@@ -218,208 +204,25 @@ class Core:
         for people, mean, typical_person in zip(
             self.group_result.group2people,
             self.cluster_result.cluster_means,
-            typical_people
+            people_indices
         ):
             assert mean.ndim == 1
 
             typical_components: ComponentGroup = self.component_groups[typical_person]
-            sphere_components: ComponentGroup = typical_components.filter(lambda c: c.shape == Shape.SPHERE)
 
-            n_spheres = len(sphere_components)
-            if n_spheres == 0:
-                typical_distance_means.append(np.empty((0, top_k)))
-                typical_distance_stds.append(np.empty((0, top_k)))
-                typical_indices.append(np.empty((0, top_k), dtype=int))
-                continue
-
-            selected_indices = sphere_components.get_typical_indices(top_k, selectable_indices)
-            assert selected_indices.shape == (n_spheres, top_k)
-
-            if verbose:
-                print(f"{n_spheres} / {len(typical_components)} of the components are spheres")
-                print("number of selected indices:", selected_indices.shape)
-                print()
-
-            centers = sphere_components.param1
-            radii = sphere_components.param2
-            assert centers.shape == (n_spheres, 4)
-            assert radii.shape == (n_spheres,)
-
-            n_people = len(people)
-
-            selected_data = self.data[people][:, selected_indices, :]
-            assert selected_data.shape == (n_people, n_spheres, top_k, 4)
-
-            distance = dist_f(selected_data, centers, radii)
-            assert distance.shape == (n_people, n_spheres, top_k)
-
-            means: np.ndarray = distance.mean(axis=0)
-            stds: np.ndarray = distance.std(axis=0)
-            assert means.shape == (n_spheres, top_k)
-            assert stds.shape == (n_spheres, top_k)
-
-            typical_distance_means.append(means)
-            typical_distance_stds.append(stds)
-            typical_indices.append(selected_indices)
-
-        if not hasattr(self, "sphere_typical_data"):
-            self.sphere_typical_data = {}
-
-        self.sphere_typical_data[use_dim] = TypicalAnalysisData(
-            people=typical_people,
-            distance_means=typical_distance_means,
-            distance_stds=typical_distance_stds,
-            indices=typical_indices,
-            num_people=self.group_result.n_people,
-        )
-
-    def analyze_typical_plane(
-        self,
-        use_dim: use_dim_type,
-        typical_analyzer: typical_analyzer_type = None,
-        selectable_indices: np.ndarray = None,
-        top_k: int = 20,
-        verbose: bool = False,
-    ):
-        """
-        Analyze the typical components for each group
-
-        Parameters
-        ----------
-        use_dim : use_dim_type, optional
-            the dimension to use, by default '4D4D'
-            `1D1D` means 1D data and 1D center
-            `1D4D` means 1D data and 4D center
-            `4D4D` means 4D data and 4D center
-        typical_analyzer : Callable[[ComponentGroups, np.ndarray, np.ndarray], np.integer | int], optional
-            the function should take the component_groups, people indices, and the attr of cluster mean as input and return the typical person index, by default None
-            If None, the function to get the typical person, by default it gets the person with the attribute ( use self.feature_getter ) closest to the cluster mean
-        selectable_indices : np.ndarray, optional
-            the indices that can be selected, by default None, which means all the indices can be selected
-        top_k : int, optional
-            the number of components to select, by default 20
-        verbose : bool, optional
-            whether to print the information, by default False
-        """
-
-        typical_people = self.analyze_typical_person(typical_analyzer)
-        typical_distance_means = []
-        typical_distance_stds = []
-        typical_indices = []
-
-        dist_f = self.use_dim_decorator(use_dim)(geometry.distance_to_planes)
-
-        if not hasattr(self, "cluster_result"):
-            raise ValueError("The cluster_result has not been assigned yet")
-
-        for people, mean, typical_person in zip(
-            self.group_result.group2people,
-            self.cluster_result.cluster_means,
-            typical_people
-        ):
-            assert mean.ndim == 1
-
-            typical_components: ComponentGroup = self.component_groups[typical_person]
-            plane_components = typical_components.filter(lambda c: c.shape == Shape.PLANE)
-
-            n_planes = len(plane_components)
-            if n_planes == 0:
-                typical_distance_means.append(np.empty((0, top_k)))
-                typical_distance_stds.append(np.empty((0, top_k)))
-                typical_indices.append(np.empty((0, top_k), dtype=int))
-                continue
-
-            selected_indices = plane_components.get_typical_indices(top_k, selectable_indices)
-            assert selected_indices.shape == (n_planes, top_k)
-
-            if verbose:
-                print(f"{n_planes} / {len(typical_components)} of the components are planes")
-                print("number of selected indices:", selected_indices.shape)
-                print()
-
-            x0s = plane_components.param1
-            normals = plane_components.param2
-            assert x0s.shape == (n_planes, 4)
-            assert normals.shape == (n_planes, 4)
-
-            n_people = len(people)
-
-            selected_data = self.data[people][:, selected_indices, :]
-            assert selected_data.shape == (n_people, n_planes, top_k, 4)
-
-            distance = dist_f(selected_data, x0s, normals)
-            assert distance.shape == (n_people, n_planes, top_k)
-
-            means: np.ndarray = distance.mean(axis=0)
-            stds: np.ndarray = distance.std(axis=0)
-            assert means.shape == (n_planes, top_k)
-            assert stds.shape == (n_planes, top_k)
-
-            typical_distance_means.append(means)
-            typical_distance_stds.append(stds)
-            typical_indices.append(selected_indices)
-
-        if not hasattr(self, "plane_typical_data"):
-            self.plane_typical_data = {}
-
-        self.plane_typical_data[use_dim] = TypicalAnalysisData(
-            people=typical_people,
-            distance_means=typical_distance_means,
-            distance_stds=typical_distance_stds,
-            indices=typical_indices,
-            num_people=self.group_result.n_people,
-        )
-
-    def analyze_typical_hausdorff(
-        self,
-        use_dim: use_dim_type,
-        typical_analyzer: typical_analyzer_type = None,
-        selectable_indices: np.ndarray = None,
-        top_k: int = 20,
-        verbose: bool = False,
-    ):
-
-        """
-        Analyze the typical components for each group
-
-        Parameters
-        ----------
-        use_dim : use_dim_type, optional
-            the dimension to use, by default '4D4D'
-            `1D1D` means 1D data and 1D center
-            `1D4D` means 1D data and 4D center
-            `4D4D` means 4D data and 4D center
-        typical_analyzer : Callable[[ComponentGroups, np.ndarray, np.ndarray], np.integer | int], optional
-            the function should take the component_groups, people indices, and the attr of cluster mean as input and return the typical person index, by default None
-            If None, the function to get the typical person, by default it gets the person with the attribute ( use self.feature_getter ) closest to the cluster mean
-        selectable_indices : np.ndarray, optional
-            the indices that can be selected, by default None, which means all the indices can be selected
-        top_k : int, optional
-            the number of components to select, by default 20
-        verbose : bool, optional
-            whether to print the information, by default False
-        """
-
-        typical_people = self.analyze_typical_person(typical_analyzer)
-        typical_distance_means = []
-        typical_distance_stds = []
-        typical_indices = []
-
-        dist_f = self.use_dim_decorator(use_dim)(geometry.distance_to_pointsets)
-
-        if not hasattr(self, "cluster_result"):
-            raise ValueError("The cluster_result has not been assigned yet")
-
-        for people, mean, typical_person in zip(
-            self.group_result.group2people,
-            self.cluster_result.cluster_means,
-            typical_people
-        ):
-            assert mean.ndim == 1
-
-            typical_components: ComponentGroup = self.component_groups[typical_person]
+            match analyze_dist:
+                case "sphere":
+                    typical_components = typical_components.filter(lambda c: c.shape == Shape.SPHERE)
+                case "plane":
+                    typical_components = typical_components.filter(lambda c: c.shape == Shape.PLANE)
 
             n_components = len(typical_components)
+
+            if n_components == 0:
+                distance_means.append(np.empty((0, top_k)))
+                distance_stds.append(np.empty((0, top_k)))
+                indices.append(np.empty((0, top_k), dtype=int))
+                continue
 
             selected_indices = typical_components.get_typical_indices(top_k, selectable_indices)
             assert selected_indices.shape == (n_components, top_k)
@@ -429,29 +232,50 @@ class Core:
             selected_data = self.data[people][:, selected_indices, :]
             assert selected_data.shape == (n_people, n_components, top_k, 4)
 
-            typical_person_data = self.data[typical_person, selected_indices, :]
-            assert typical_person_data.shape == (n_components, top_k, 4)
+            match analyze_dist:
+                case "sphere":
+                    centers = typical_components.param1
+                    radii = typical_components.param2
+                    assert centers.shape == (n_components, 4)
+                    assert radii.shape == (n_components,)
+                    args = [centers, radii]
+                case "plane":
+                    x0s = typical_components.param1
+                    normals = typical_components.param2
+                    assert x0s.shape == (n_components, 4)
+                    assert normals.shape == (n_components, 4)
+                    args = [x0s, normals]
+                case "hausdorff":
+                    typical_person_data = self.data[typical_person, selected_indices, :]
+                    assert typical_person_data.shape == (n_components, top_k, 4)
+                    args = [typical_person_data]
+                case _:
+                    raise ValueError(f"Invalid value for analyze_dist: {analyze_dist}")
 
-            distance = dist_f(selected_data, typical_person_data)
-            assert distance.shape == (n_people, n_components, )
+            distance = dist_f(selected_data, *args)
+            if analyze_dist == "hausdorff":
+                assert distance.shape == (n_people, n_components)
+            else: # sphere or plane
+                assert distance.shape == (n_people, n_components, top_k)
 
             means: np.ndarray = distance.mean(axis=0)
             stds: np.ndarray = distance.std(axis=0)
-            assert means.shape == (n_components, )
-            assert stds.shape == (n_components, )
+            if analyze_dist == "hausdorff":
+                assert means.shape == (n_components, )
+                assert stds.shape == (n_components, )
+            else: # sphere or plane
+                assert means.shape == (n_components, top_k)
+                assert stds.shape == (n_components, top_k)
 
-            typical_distance_means.append(means)
-            typical_distance_stds.append(stds)
-            typical_indices.append(selected_indices)
+            distance_means.append(means)
+            distance_stds.append(stds)
+            indices.append(selected_indices)
 
-        if not hasattr(self, "hausdorff_typical_data"):
-            self.hausdorff_typical_data = {}
-
-        self.hausdorff_typical_data[use_dim] = TypicalAnalysisData(
-            people=typical_people,
-            distance_means=typical_distance_means,
-            distance_stds=typical_distance_stds,
-            indices=typical_indices,
+        return AnalysisData(
+            people=people_indices,
+            distance_means=distance_means,
+            distance_stds=distance_stds,
+            indices=indices,
             num_people=self.group_result.n_people,
         )
 
@@ -504,11 +328,11 @@ class Core:
 
         return np.array(typical)
 
-
     def analyze_typical(
         self,
         use_dim: use_dim_type,
         analyze_dist: analyze_dist_type,
+        typical_analyzer: typical_analyzer_type = None,
         **kwargs
     ):
         """
@@ -527,21 +351,29 @@ class Core:
             `sphere` means to analyze the typical sphere
             `plane` means to analyze the typical plane
             `hausdorff` means to analyze the typical hausdorff
+        typical_analyzer : Callable[[ComponentGroups, np.ndarray, np.ndarray], np.integer | int], optional
+            the function should take the component_groups, people indices, and the attr of cluster mean as input and return the typical person index, by default None
+            If None, the function to get the typical person, by default it gets the person with the attribute ( use self.feature_getter ) closest to the cluster mean
         """
-        match analyze_dist:
-            case "default":
-                self.analyze_typical_sphere(use_dim=use_dim, **kwargs)
-                self.analyze_typical_plane(use_dim=use_dim, **kwargs)
-            case "sphere":
-                self.analyze_typical_sphere(use_dim=use_dim, **kwargs)
-            case "plane":
-                self.analyze_typical_plane(use_dim=use_dim, **kwargs)
-            case "hausdorff":
-                self.analyze_typical_hausdorff(use_dim=use_dim, **kwargs)
 
-    def classify_with_typical_sphere(
+        if analyze_dist == "default":
+            self.analyze_typical(use_dim, "sphere", typical_analyzer, **kwargs)
+            self.analyze_typical(use_dim, "plane", typical_analyzer, **kwargs)
+            return
+
+        typical_people = self.analyze_typical_person(typical_analyzer)
+
+        attr_name = f"{analyze_dist}_typical_data"
+        if not hasattr(self, attr_name):
+            setattr(self, attr_name, {})
+        getattr(self, attr_name)[use_dim] = \
+            self._analyze_impl(use_dim, analyze_dist, typical_people, **kwargs)
+
+    def _classify_impl(
         self,
         use_dim: use_dim_type,
+        analyze_dist: analyze_dist_type,
+        analysis_data: AnalysisData,
         data: np.ndarray = None,
         score_agg_method: Literal["mean", "max", "min"] = "mean",
         verbose: bool = False,
@@ -576,335 +408,107 @@ class Core:
         pred_scores = np.empty((n_people, n_group))
         assert pred_scores.shape == (n_people, n_group)
 
-        if use_dim not in self.sphere_typical_data:
-            raise ValueError(f"Typical data for {use_dim} has not been analyzed yet")
-        typical_data = self.sphere_typical_data[use_dim]
+        assert len(analysis_data.people) == n_group
+        assert len(analysis_data.distance_means) == n_group
+        assert len(analysis_data.distance_stds) == n_group
+        assert len(analysis_data.indices) == n_group
 
-        typical = typical_data.people
-        typical_distance_means = typical_data.distance_means
-        typical_distance_stds = typical_data.distance_stds
-        typical_indices = typical_data.indices
-        assert len(typical) == n_group
-        assert len(typical_distance_means) == n_group
-        assert len(typical_distance_stds) == n_group
-        assert len(typical_indices) == n_group
-
-        dist_f = self.use_dim_decorator(use_dim)(geometry.distance_to_spheres)
+        dist_f = self.use_dim_decorator(use_dim)(self.dist_f_map[analyze_dist])
 
         for group_index, (
-            typical_person,
+            person_idx,
             selected_indices,
             means,
             stds,
         ) in enumerate(
             zip(
-                typical,
-                typical_indices,
-                typical_distance_means,
-                typical_distance_stds,
-            )
-        ):
-            n_spheres, n_points_per_component = selected_indices.shape
-
-            if n_spheres == 0:
-                if verbose:
-                    print(f"Warning: no components for group {group_index}")
-                pred_scores[:, group_index] = eps
-                continue
-
-            typical_person_data = self.data[typical_person, selected_indices]
-            assert typical_person_data.shape == (n_spheres, n_points_per_component, 4)
-
-            typical_components: ComponentGroup = self.component_groups[typical_person]
-            sphere_components = typical_components.filter(lambda c: c.shape == Shape.SPHERE)
-            assert len(sphere_components) == n_spheres
-
-            assert means.shape == (n_spheres, n_points_per_component)
-            assert stds.shape == (n_spheres, n_points_per_component)
-
-            centers =sphere_components.param1
-            radius = sphere_components.param2
-            assert centers.shape == (n_spheres, 4)
-            assert radius.shape == (n_spheres,)
-
-            # calculate scores
-            group_data = data[:, selected_indices, :]
-            n_people, n_spheres, n_points_per_component, n_dim = group_data.shape
-            assert n_dim == 4
-            assert group_data.shape == (n_people, n_spheres, n_points_per_component, n_dim)
-            assert centers.shape == (n_spheres, n_dim)
-            assert radius.shape == (n_spheres,)
-            assert means.shape == (n_spheres, n_points_per_component)
-            assert stds.shape == (n_spheres, n_points_per_component)
-
-            distances = dist_f(group_data, centers, radius)
-            assert distances.shape == (n_people, n_spheres, n_points_per_component)
-
-            scores: np.ndarray = ((distances - means) / (stds + eps)) ** 2
-            assert scores.shape == (n_people, n_spheres, n_points_per_component)
-
-            match score_agg_method:
-                case "max":
-                    scores = np.amin(scores, axis=(1, 2))
-                case "mean":
-                    scores = np.mean(scores, axis=(1, 2))
-                case "min":
-                    scores = np.amax(scores, axis=(1, 2))
-                case _:
-                    raise ValueError(f"Invalid value for agg_method: {score_agg_method}")
-            assert scores.shape == (n_people, )
-
-            pred_scores[:, group_index] = np.exp(-scores)
-
-
-        if normalize_score:
-            pred_scores /= pred_scores.sum(axis=1, keepdims=True)
-        pred_label: np.ndarray = pred_scores.argmax(axis=1)
-        true_label: np.ndarray = np.array(self.group_result.person2group)
-
-        self.pred_scores = pred_scores
-        self.pred_label = pred_label
-        self.true_label = true_label
-
-        return pred_scores
-
-    def classify_with_typical_plane(
-        self,
-        use_dim: use_dim_type,
-        data: np.ndarray = None,
-        score_agg_method: Literal["mean", "max", "min"] = "mean",
-        verbose: bool = False,
-        normalize_score: bool = True,
-    ) -> np.ndarray:
-        '''
-        Classify the data with typical data
-
-        Parameters
-        ----------
-        use_dim: use_dim_type
-            The dimension of the data to be classified
-        data: np.ndarray
-            The data to be classified, if None, self.data will be used
-        score_agg_method: Literal["mean", "max", "min"]
-            The method to aggregate the scores of different components
-        verbose: bool
-            whether to print the information, by default False
-
-        Returns
-        -------
-        pred_scores: np.ndarray
-        '''
-
-        if data is None:
-            data = self.data
-
-        # evaluate the classification score for every person in all groups
-        n_people, n_proteins, n_dim = data.shape
-        n_group = self.group_result.n_group
-
-        pred_scores = np.empty((n_people, n_group))
-        assert pred_scores.shape == (n_people, n_group)
-
-        if use_dim not in self.plane_typical_data:
-            raise ValueError(f"Typical data for {use_dim} has not been analyzed yet")
-        typical_data = self.plane_typical_data[use_dim]
-
-        typical = typical_data.people
-        typical_distance_means = typical_data.distance_means
-        typical_distance_stds = typical_data.distance_stds
-        typical_indices = typical_data.indices
-        assert len(typical) == n_group
-        assert len(typical_distance_means) == n_group
-        assert len(typical_distance_stds) == n_group
-        assert len(typical_indices) == n_group
-
-        dist_f = self.use_dim_decorator(use_dim)(geometry.distance_to_planes)
-
-        for group_index, (
-            typical_person,
-            selected_indices,
-            means,
-            stds,
-        ) in enumerate(
-            zip(
-                typical,
-                typical_indices,
-                typical_distance_means,
-                typical_distance_stds,
-            )
-        ):
-            n_planes, n_points_per_component = selected_indices.shape
-
-            if n_planes == 0:
-                if verbose:
-                    print(f"Warning: no components for group {group_index}")
-                pred_scores[:, group_index] = eps
-                continue
-
-            typical_person_data = self.data[typical_person, selected_indices]
-            assert typical_person_data.shape == (n_planes, n_points_per_component, 4)
-
-            typical_components: ComponentGroup = self.component_groups[typical_person]
-            plane_components = typical_components.filter(lambda c: c.shape == Shape.PLANE)
-            assert len(plane_components) == n_planes
-
-            assert means.shape == (n_planes, n_points_per_component)
-            assert stds.shape == (n_planes, n_points_per_component)
-
-            x0s = plane_components.param1
-            normals = plane_components.param2
-            assert x0s.shape == (n_planes, 4)
-            assert normals.shape == (n_planes, 4)
-
-            group_data = data[:, selected_indices, :]
-            assert group_data.ndim == 4, f"Invalid dimension for group_data, got {group_data.shape}"
-            n_people, n_planes, n_points_per_component, n_dim = group_data.shape
-            assert n_dim == 4
-
-            assert group_data.shape == (n_people, n_planes, n_points_per_component, n_dim)
-            assert x0s.shape == (n_planes, n_dim)
-            assert normals.shape == (n_planes, n_dim)
-            assert means.shape == (n_planes, n_points_per_component)
-            assert stds.shape == (n_planes, n_points_per_component)
-
-            distances = dist_f(group_data, x0s, normals)
-            assert distances.shape == (n_people, n_planes, n_points_per_component)
-
-            scores: np.ndarray = ((distances - means) / (stds + eps)) ** 2
-            assert scores.shape == (n_people, n_planes, n_points_per_component)
-
-            match score_agg_method:
-                case "max":
-                    scores = np.amin(scores, axis=(1, 2))
-                case "mean":
-                    scores = np.mean(scores, axis=(1, 2))
-                case "min":
-                    scores = np.amax(scores, axis=(1, 2))
-                case _:
-                    raise ValueError(f"Invalid value for agg_method: {score_agg_method}")
-            assert scores.shape == (n_people, )
-
-            pred_scores[:, group_index] = np.exp(-scores)
-
-        if normalize_score:
-            pred_scores /= pred_scores.sum(axis=1, keepdims=True)
-        pred_label: np.ndarray = pred_scores.argmax(axis=1)
-        true_label: np.ndarray = np.array(self.group_result.person2group)
-
-        self.pred_scores = pred_scores
-        self.pred_label = pred_label
-        self.true_label = true_label
-
-        return pred_scores
-
-    def classify_with_typical_hausdorff(
-        self,
-        use_dim: use_dim_type,
-        data: np.ndarray = None,
-        score_agg_method: Literal["mean", "max", "min"] = "mean",
-        verbose: bool = False,
-        normalize_score: bool = True,
-    ):
-        '''
-        Classify the data with typical data
-
-        Parameters
-        ----------
-        use_dim: use_dim_type
-            The dimension of the data to be classified
-        data: np.ndarray
-            The data to be classified, if None, self.data will be used
-        score_agg_method: Literal["mean", "max", "min"]
-            The method to aggregate the scores of different components
-        verbose: bool
-            whether to print the information, by default False
-
-        Returns
-        -------
-        pred_scores: np.ndarray
-        '''
-
-        if data is None:
-            data = self.data
-
-        # evaluate the classification score for every person in all groups
-        n_people, n_proteins, n_dim = data.shape
-        n_group = self.group_result.n_group
-
-        pred_scores = np.empty((n_people, n_group))
-        assert pred_scores.shape == (n_people, n_group)
-
-        if use_dim not in self.hausdorff_typical_data:
-            raise ValueError(f"Typical data for {use_dim} has not been analyzed yet")
-        typical_data = self.hausdorff_typical_data[use_dim]
-
-        typical = typical_data.people
-        typical_distance_means = typical_data.distance_means
-        typical_distance_stds = typical_data.distance_stds
-        typical_indices = typical_data.indices
-        assert len(typical) == n_group
-        assert len(typical_distance_means) == n_group
-        assert len(typical_distance_stds) == n_group
-        assert len(typical_indices) == n_group
-
-        dist_f = self.use_dim_decorator(use_dim)(geometry.distance_to_pointsets)
-
-        for group_index, (
-            typical_person,
-            selected_indices,
-            means,
-            stds,
-        ) in enumerate(
-            zip(
-                typical,
-                typical_indices,
-                typical_distance_means,
-                typical_distance_stds,
+                analysis_data.people,
+                analysis_data.indices,
+                analysis_data.distance_means,
+                analysis_data.distance_stds,
             )
         ):
             n_components, n_points_per_component = selected_indices.shape
 
-            if len(selected_indices) == 0:
+            if n_components == 0:
                 if verbose:
                     print(f"Warning: no components for group {group_index}")
-                pred_scores[:, group_index] = 0
+                pred_scores[:, group_index] = eps
                 continue
 
-            typical_person_data = self.data[typical_person, selected_indices]
-            assert typical_person_data.shape == (n_components, n_points_per_component, 4)
+            person_data = self.data[person_idx, selected_indices]
+            assert person_data.shape == (n_components, n_points_per_component, 4)
 
-            assert means.shape == (n_components, )
-            assert stds.shape == (n_components, )
+            components: ComponentGroup = self.component_groups[person_idx]
 
+            match analyze_dist:
+                case "sphere":
+                    components = components.filter(lambda c: c.shape == Shape.SPHERE)
+                case "plane":
+                    components = components.filter(lambda c: c.shape == Shape.PLANE)
+
+
+            assert len(components) == n_components
+
+            if analyze_dist == "hausdorff":
+                assert means.shape == (n_components, )
+                assert stds.shape == (n_components, )
+            else:
+                assert means.shape == (n_components, n_points_per_component)
+                assert stds.shape == (n_components, n_points_per_component)
+
+            match analyze_dist:
+                case "sphere":
+                    centers = components.param1
+                    radius = components.param2
+                    assert centers.shape == (n_components, 4)
+                    assert radius.shape == (n_components,)
+                    args = [centers, radius]
+                case "plane":
+                    x0s = components.param1
+                    normals = components.param2
+                    assert x0s.shape == (n_components, 4)
+                    assert normals.shape == (n_components, 4)
+                    args = [x0s, normals]
+                case "hausdorff":
+                    args = [person_data]
+                case _:
+                    raise ValueError(f"Invalid value for analyze_dist: {analyze_dist}")
+
+            # calculate scores
             group_data = data[:, selected_indices, :]
-            assert group_data.ndim == 4, f"Invalid dimension for group_data, got {group_data.shape}"
             n_people, n_components, n_points_per_component, n_dim = group_data.shape
             assert n_dim == 4
-
             assert group_data.shape == (n_people, n_components, n_points_per_component, n_dim)
-            assert typical_person_data.shape == (n_components, n_points_per_component, n_dim)
-            assert means.shape == (n_components, )
-            assert stds.shape == (n_components, )
 
-            distances = dist_f(group_data, typical_person_data)
-            assert distances.shape == (n_people, n_components)
 
-            scores: np.ndarray = ((distances - means) / (stds + eps)) ** 2
-            assert scores.shape == (n_people, n_components)
+            distances = dist_f(group_data, *args)
+
+            if analyze_dist == "hausdorff":
+                assert distances.shape == (n_people, n_components, )
+            else: # sphere or plane
+                assert distances.shape == (n_people, n_components, n_points_per_component)
+
+            scores: np.ndarray = np.exp(-((distances - means) / (stds + eps)) ** 2)
+            if analyze_dist == "hausdorff":
+                assert scores.shape == (n_people, n_components)
+            else: # sphere or plane
+                assert scores.shape == (n_people, n_components, n_points_per_component)
+
+            agg_axis = (1, 2) if analyze_dist != "hausdorff" else 1
 
             match score_agg_method:
                 case "max":
-                    scores = np.amin(scores, axis=1)
+                    scores = np.amax(scores, axis=agg_axis)
                 case "mean":
-                    scores = np.mean(scores, axis=1)
+                    scores = np.mean(scores, axis=agg_axis)
                 case "min":
-                    scores = np.amax(scores, axis=1)
+                    scores = np.amin(scores, axis=agg_axis)
                 case _:
                     raise ValueError(f"Invalid value for agg_method: {score_agg_method}")
             assert scores.shape == (n_people, )
 
-            pred_scores[:, group_index] = np.exp(-scores)
-
+            pred_scores[:, group_index] = scores
 
         if normalize_score:
             pred_scores /= pred_scores.sum(axis=1, keepdims=True)
@@ -947,72 +551,51 @@ class Core:
         pred_scores: np.ndarray
         '''
 
-        match dist_type:
+        if dist_type == "default":
+            score_sphere = self.classify_with_typical(
+                use_dim=use_dim,
+                data=data,
+                score_agg_method=score_agg_method,
+                dist_type="sphere",
+                verbose=verbose,
+                normalize_score=False
+            )
 
-            case "default":
+            score_plane = self.classify_with_typical(
+                use_dim=use_dim,
+                data=data,
+                score_agg_method=score_agg_method,
+                dist_type="plane",
+                verbose=verbose,
+                normalize_score=False
+            )
 
-                score_sphere = self.classify_with_typical_sphere(
-                    use_dim=use_dim,
-                    data=data,
-                    score_agg_method=score_agg_method,
-                    verbose=verbose,
-                    normalize_score=False
-                )
+            match score_agg_method:
+                case "mean":
+                    score = score_sphere * score_plane
+                case "max":
+                    score = np.maximum(score_sphere, score_plane)
+                case "min":
+                    score = np.minimum(score_sphere, score_plane)
+                case _:
+                    raise ValueError(f"Invalid value for score_agg_method: {score_agg_method}")
 
-                score_plane = self.classify_with_typical_plane(
-                    use_dim=use_dim,
-                    data=data,
-                    score_agg_method=score_agg_method,
-                    verbose=verbose,
-                    normalize_score=False
-                )
+            if normalize_score:
+                score /= score.sum(axis=1, keepdims=True)
 
-                match score_agg_method:
-                    case "mean":
-                        score = score_sphere * score_plane
-                    case "max":
-                        score = np.maximum(score_sphere, score_plane)
-                    case "min":
-                        score = np.minimum(score_sphere, score_plane)
-                    case _:
-                        raise ValueError(f"Invalid value for score_agg_method: {score_agg_method}")
+        else:
 
+            analysis_data = getattr(self, f"{dist_type}_typical_data")[use_dim]
 
-                if normalize_score:
-                    score /= score.sum(axis=1, keepdims=True)
-
-            case "sphere":
-
-                score = self.classify_with_typical_sphere(
-                    use_dim=use_dim,
-                    data=data,
-                    score_agg_method=score_agg_method,
-                    verbose=verbose,
-                    normalize_score=normalize_score
-                )
-
-            case "plane":
-
-                score = self.classify_with_typical_plane(
-                    use_dim=use_dim,
-                    data=data,
-                    score_agg_method=score_agg_method,
-                    verbose=verbose,
-                    normalize_score=normalize_score
-                )
-
-            case "hausdorff":
-
-                score = self.classify_with_typical_hausdorff(
-                    use_dim=use_dim,
-                    data=data,
-                    score_agg_method=score_agg_method,
-                    verbose=verbose,
-                    normalize_score=normalize_score
-                )
-
-            case _:
-                raise ValueError(f"Invalid value for dist_type: {dist_type}")
+            score = self._classify_impl(
+                use_dim=use_dim,
+                analyze_dist=dist_type,
+                analysis_data=analysis_data,
+                data=data,
+                score_agg_method=score_agg_method,
+                verbose=verbose,
+                normalize_score=normalize_score
+            )
 
         self.pred_scores = score
         self.pred_label = score.argmax(axis=1)
@@ -1033,11 +616,6 @@ class Core:
     def show_classification_result(self):
         utils.show_classification_result(self.true_label, self.pred_scores)
 
-    def predict(self):
-        raise NotImplementedError
-
-    def evaluate(self):
-        raise NotImplementedError
 
     def split(self, n_splits: int = 10, random_state: int = 42) -> list["Core"]:
         """
@@ -1101,7 +679,16 @@ if __name__ == "__main__":
         "data/patients_dist_sheet.npy"
     )
     patients_core.cluster_by_gmm(
-        n_group=4, feature_getter=lambda cgs: cgs.inverse_total_curvatures[:, None])
-    patients_core.analyze_typical_sphere(use_dim="1D4D")
-    patients_core.classify_with_typical_sphere(use_dim="1D4D")
+        n_group=4,
+        feature_getter=lambda cgs: cgs.inverse_total_curvatures[:, None]
+    )
+    patients_core.analyze_typical(
+        use_dim="4D4D",
+        analyze_dist="sphere"
+    )
+    patients_core.classify_with_typical(
+        use_dim="4D4D",
+        dist_type="sphere"
+    )
     patients_core.show_classification_result()
+
