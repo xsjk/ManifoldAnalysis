@@ -1,22 +1,24 @@
-import numpy as np
-from typing import Literal, Callable
-from clusterer import GMMClusterer
-import geometry
-from grouper import GroupResult
-from tqdm import trange
-from joblib import Parallel, delayed
+import pickle
+from dataclasses import dataclass
 from functools import wraps
+from typing import Callable, Literal
+
+import numpy as np
+from joblib import Parallel, delayed
+from tqdm import trange
+
+import geometry
+import utils
+from clusterer import GMMClusterer
 from component import (
     ComponentGroup,
     ComponentGroups,
     Shape,
 )
-from dataclasses import dataclass
-import utils
-import pickle
-
+from grouper import GroupResult
 
 eps = np.finfo(np.float32).eps
+
 
 @dataclass
 class AnalysisData:
@@ -54,20 +56,25 @@ class ClusterResult:
 
 use_dim_type = Literal["1D1D", "1D4D", "4D4D"]
 analyze_dist_type = Literal["default", "sphere", "plane", "hausdorff"]
-typical_analyzer_type = Callable[[
-    ComponentGroups,
-    np.ndarray[tuple[int], np.dtype[np.integer]],
-    np.ndarray[tuple[int], np.dtype[np.floating]]
-], np.integer | int]
+typical_analyzer_type = Callable[
+    [
+        ComponentGroups,
+        np.ndarray[tuple[int], np.dtype[np.integer]],
+        np.ndarray[tuple[int], np.dtype[np.floating]],
+    ],
+    np.integer | int,
+]
 
-feature_getter_type = Callable[[ComponentGroups], np.ndarray[tuple[int, int], np.dtype[np.floating]]]
+feature_getter_type = Callable[
+    [ComponentGroups],
+    np.ndarray[tuple[int, int], np.dtype[np.floating]],
+]
 
 
 score_agg_type = Literal["max", "mean", "median", "min"]
 
 
 class Core:
-
     data: np.ndarray  # shape: (n_people, n_samples, 4)
     dataType: np.ndarray  # data type for each person
 
@@ -97,8 +104,7 @@ class Core:
     ):
         self.data = data
         if isinstance(dataType, str):
-            self.dataType = np.array(
-                [dataType] * len(data), dtype=f"U{len(dataType)}")
+            self.dataType = np.array([dataType] * len(data), dtype=f"U{len(dataType)}")
         elif isinstance(dataType, np.ndarray):
             self.dataType = dataType
         else:
@@ -113,7 +119,6 @@ class Core:
         n_jobs: int = 16,
         progress_bar: bool = False,
     ) -> ComponentGroups:
-
         self.component_groups = ComponentGroups(
             Parallel(n_jobs=n_jobs)(
                 delayed(ComponentGroup.fit)(
@@ -121,7 +126,9 @@ class Core:
                     split_config=split_config,
                     analyze_config=analyze_config,
                     component_config=dict(
-                        personID=i, dataType=self.dataType[i], data=self.data[i]
+                        personID=i,
+                        dataType=self.dataType[i],
+                        data=self.data[i],
                     ),
                 )
                 for i in (trange if progress_bar else range)(len(self.data))
@@ -155,8 +162,7 @@ class Core:
         random_state : int, optional
             the random state, by default 42
         """
-        self.clusterer = GMMClusterer(
-            n_components=n_group, random_state=random_state)
+        self.clusterer = GMMClusterer(n_components=n_group, random_state=random_state)
 
         self.feature_getter = feature_getter
 
@@ -176,7 +182,6 @@ class Core:
     def group_result(self) -> GroupResult:
         return self.cluster_result.group_result
 
-
     dist_f_map: dict[str, Callable] = {
         "sphere": geometry.distance_to_spheres,
         "plane": geometry.distance_to_planes,
@@ -189,9 +194,8 @@ class Core:
         analyze_dist: analyze_dist_type,
         people_indices: np.ndarray,
         selectable_indices: np.ndarray = None,
-        top_k: int = 20
+        top_k: int = 20,
     ) -> AnalysisData:
-
         distance_means = []
         distance_stds = []
         indices = []
@@ -204,7 +208,7 @@ class Core:
         for people, mean, typical_person in zip(
             self.group_result.group2people,
             self.cluster_result.cluster_means,
-            people_indices
+            people_indices,
         ):
             assert mean.ndim == 1
 
@@ -225,6 +229,8 @@ class Core:
                 continue
 
             selected_indices = typical_components.get_typical_indices(top_k, selectable_indices)
+            if selectable_indices is not None:
+                assert np.all(np.isin(selected_indices, selectable_indices))
             assert selected_indices.shape == (n_components, top_k)
 
             n_people = len(people)
@@ -255,15 +261,15 @@ class Core:
             distance = dist_f(selected_data, *args)
             if analyze_dist == "hausdorff":
                 assert distance.shape == (n_people, n_components)
-            else: # sphere or plane
+            else:  # sphere or plane
                 assert distance.shape == (n_people, n_components, top_k)
 
             means: np.ndarray = distance.mean(axis=0)
             stds: np.ndarray = distance.std(axis=0)
             if analyze_dist == "hausdorff":
-                assert means.shape == (n_components, )
-                assert stds.shape == (n_components, )
-            else: # sphere or plane
+                assert means.shape == (n_components,)
+                assert stds.shape == (n_components,)
+            else:  # sphere or plane
                 assert means.shape == (n_components, top_k)
                 assert stds.shape == (n_components, top_k)
 
@@ -310,19 +316,14 @@ class Core:
 
             typical_person: np.integer | int
             if typical_analyzer is None:
-                assert hasattr(
-                    self, 'feature_getter'), "The feature_getter has not been assigned yet, make sure you have run the cluster_by_gmm method"
+                assert hasattr(self, "feature_getter"), "The feature_getter has not been assigned yet, make sure you have run the cluster_by_gmm method"
                 feature = self.feature_getter(self.component_groups)[people]
                 assert feature.ndim == 2
                 assert feature.shape[1] == mean.shape[0]
                 distance = np.linalg.norm(feature - mean, axis=-1)
                 typical_person = people[distance.argmin()]  # type: ignore
             else:
-                typical_person = typical_analyzer(
-                    self.component_groups,
-                    people,
-                    mean
-                )
+                typical_person = typical_analyzer(self.component_groups, people, mean)
 
             typical.append(typical_person)
 
@@ -333,7 +334,7 @@ class Core:
         use_dim: use_dim_type,
         analyze_dist: analyze_dist_type,
         typical_analyzer: typical_analyzer_type = None,
-        **kwargs
+        **kwargs,
     ):
         """
         Analyze the typical components for each group
@@ -366,8 +367,7 @@ class Core:
         attr_name = f"{analyze_dist}_typical_data"
         if not hasattr(self, attr_name):
             setattr(self, attr_name, {})
-        getattr(self, attr_name)[use_dim] = \
-            self._analyze_impl(use_dim, analyze_dist, typical_people, **kwargs)
+        getattr(self, attr_name)[use_dim] = self._analyze_impl(use_dim, analyze_dist, typical_people, **kwargs)
 
     def _classify_impl(
         self,
@@ -379,7 +379,7 @@ class Core:
         verbose: bool = False,
         normalize_score: bool = True,
     ) -> np.ndarray:
-        '''
+        """
         Classify the data with typical data
 
         Parameters
@@ -396,7 +396,7 @@ class Core:
         Returns
         -------
         pred_scores: np.ndarray
-        '''
+        """
 
         if data is None:
             data = self.data
@@ -447,12 +447,11 @@ class Core:
                 case "plane":
                     components = components.filter(lambda c: c.shape == Shape.PLANE)
 
-
             assert len(components) == n_components
 
             if analyze_dist == "hausdorff":
-                assert means.shape == (n_components, )
-                assert stds.shape == (n_components, )
+                assert means.shape == (n_components,)
+                assert stds.shape == (n_components,)
             else:
                 assert means.shape == (n_components, n_points_per_component)
                 assert stds.shape == (n_components, n_points_per_component)
@@ -481,18 +480,20 @@ class Core:
             assert n_dim == 4
             assert group_data.shape == (n_people, n_components, n_points_per_component, n_dim)
 
-
             distances = dist_f(group_data, *args)
 
             if analyze_dist == "hausdorff":
-                assert distances.shape == (n_people, n_components, )
-            else: # sphere or plane
+                assert distances.shape == (
+                    n_people,
+                    n_components,
+                )
+            else:  # sphere or plane
                 assert distances.shape == (n_people, n_components, n_points_per_component)
 
-            scores: np.ndarray = np.exp(-((distances - means) / (stds + eps)) ** 2)
+            scores: np.ndarray = np.exp(-(((distances - means) / (stds + eps)) ** 2))
             if analyze_dist == "hausdorff":
                 assert scores.shape == (n_people, n_components)
-            else: # sphere or plane
+            else:  # sphere or plane
                 assert scores.shape == (n_people, n_components, n_points_per_component)
 
             agg_axis = (1, 2) if analyze_dist != "hausdorff" else 1
@@ -506,7 +507,7 @@ class Core:
                     scores = np.amin(scores, axis=agg_axis)
                 case _:
                     raise ValueError(f"Invalid value for agg_method: {score_agg_method}")
-            assert scores.shape == (n_people, )
+            assert scores.shape == (n_people,)
 
             pred_scores[:, group_index] = scores
 
@@ -530,7 +531,7 @@ class Core:
         verbose: bool = False,
         normalize_score: bool = True,
     ):
-        '''
+        """
         Classify the data with typical data
 
         Parameters
@@ -549,7 +550,7 @@ class Core:
         Returns
         -------
         pred_scores: np.ndarray
-        '''
+        """
 
         if dist_type == "default":
             score_sphere = self.classify_with_typical(
@@ -558,7 +559,7 @@ class Core:
                 score_agg_method=score_agg_method,
                 dist_type="sphere",
                 verbose=verbose,
-                normalize_score=False
+                normalize_score=False,
             )
 
             score_plane = self.classify_with_typical(
@@ -567,7 +568,7 @@ class Core:
                 score_agg_method=score_agg_method,
                 dist_type="plane",
                 verbose=verbose,
-                normalize_score=False
+                normalize_score=False,
             )
 
             match score_agg_method:
@@ -584,7 +585,6 @@ class Core:
                 score /= score.sum(axis=1, keepdims=True)
 
         else:
-
             analysis_data = getattr(self, f"{dist_type}_typical_data")[use_dim]
 
             score = self._classify_impl(
@@ -594,7 +594,7 @@ class Core:
                 data=data,
                 score_agg_method=score_agg_method,
                 verbose=verbose,
-                normalize_score=normalize_score
+                normalize_score=normalize_score,
             )
 
         self.pred_scores = score
@@ -609,13 +609,12 @@ class Core:
             case "4D4D":
                 return lambda f: f
             case "1D1D":
-                return lambda f: wraps(f)(lambda data, *args: f(*(np.mean(arr, axis=-1, keepdims=True) if arr.shape[-1] == 4 else arr for arr in (data, ) + args)))
+                return lambda f: wraps(f)(lambda data, *args: f(*(np.mean(arr, axis=-1, keepdims=True) if arr.shape[-1] == 4 else arr for arr in (data,) + args)))
             case "1D4D":
                 return lambda f: wraps(f)(lambda data, *args: f(np.broadcast_to(np.mean(data, axis=-1, keepdims=True), data.shape), *args))
 
     def show_classification_result(self):
         utils.show_classification_result(self.true_label, self.pred_scores)
-
 
     def split(self, n_splits: int = 10, random_state: int = 42) -> list["Core"]:
         """
@@ -676,19 +675,18 @@ if __name__ == "__main__":
     )
     patients_core.fit_manifolds()
     patients_core.component_groups.set_distance_cache_path(
-        "data/patients_dist_sheet.npy"
+        "data/patients_dist_sheet.npy",
     )
     patients_core.cluster_by_gmm(
         n_group=4,
-        feature_getter=lambda cgs: cgs.inverse_total_curvatures[:, None]
+        feature_getter=lambda cgs: cgs.inverse_total_curvatures[:, None],
     )
     patients_core.analyze_typical(
         use_dim="4D4D",
-        analyze_dist="sphere"
+        analyze_dist="sphere",
     )
     patients_core.classify_with_typical(
         use_dim="4D4D",
-        dist_type="sphere"
+        dist_type="sphere",
     )
     patients_core.show_classification_result()
-

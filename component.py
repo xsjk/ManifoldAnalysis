@@ -1,18 +1,28 @@
-import numpy as np
 import json
 import os
-import fitting
-import J_loss
-from typing import Callable, Iterable, Iterator, Literal, Sequence, SupportsIndex, overload
+from functools import cache
 from types import EllipsisType
+from typing import (
+    Callable,
+    Iterable,
+    Iterator,
+    Literal,
+    Sequence,
+    SupportsIndex,
+    overload,
+)
+
+import numpy as np
+import plotly.express as px
+
+import fitting
+import geometry
+import J_loss
 from geometry import (
     Geometry,
-    HyperSphereShellCap,
     HyperPlaneConvexHull,
+    HyperSphereShellCap,
 )
-import geometry
-from functools import cache
-import plotly.express as px
 
 DIMENSION = 4
 FILTER_RATE = 0.9
@@ -30,7 +40,6 @@ class Shape:
 
 
 class Component:
-
     __data_dict = {
         "AD": np.load("data/AD.npy"),
         "NL": np.load("data/Normal.npy"),
@@ -45,9 +54,7 @@ class Component:
         if self.dataType is None:
             raise ValueError("dataType is not specified")
         if self.dataType in ["AD", "NL"]:
-            assert isinstance(
-                self.personID, int | np.integer
-            ), "personID is not specified"
+            assert isinstance(self.personID, int | np.integer), "personID is not specified"
             return self.__data_dict[self.dataType][self.personID, self.dataIndex][:, self.usedim]
         else:
             raise ValueError("dataType not found")
@@ -239,19 +246,11 @@ class Component:
 
     @property
     def inverse_curvature(self) -> float:
-        return (
-            1 / self.geometry.curvature
-            if self.geometry.curvature != 0
-            else float("inf")
-        )
+        return 1 / self.geometry.curvature if self.geometry.curvature != 0 else float("inf")
 
     @property
     def inverse_total_curvature(self) -> float:
-        return (
-            1 / self.geometry.total_curvature
-            if self.geometry.total_curvature != 0
-            else float("inf")
-        )
+        return 1 / self.geometry.total_curvature if self.geometry.total_curvature != 0 else float("inf")
 
     @property
     def cur_area(self) -> float:
@@ -268,13 +267,8 @@ class Component:
     def area(self) -> float:
         return self.geometry.area
 
-
-    def get_typical_indices(
-        self,
-        top_k: int,
-        selectable_indices: np.ndarray = None
-    ) -> np.ndarray:
-        '''
+    def get_typical_indices(self, top_k: int, selectable_indices: np.ndarray = None) -> np.ndarray:
+        """
         Get the typical indices of the component
 
         Parameters
@@ -288,7 +282,7 @@ class Component:
         -------
         np.ndarray
             the typical indices of the component as a 1D array of int
-        '''
+        """
 
         match self.shape:
             case Shape.SPHERE:
@@ -304,18 +298,18 @@ class Component:
             case _:
                 raise NotImplementedError
 
-        # select top k points
-        selected_indices = np.argsort(dist_to_comp)
+        # local index to global index
+        self.dataIndex = np.array(self.dataIndex)
+        selected_indices = self.dataIndex[np.argsort(dist_to_comp)]
         if selectable_indices is not None:
             selected_indices = np.intersect1d(selected_indices, selectable_indices)
+
+        # select top k points
         selected_indices = selected_indices[:top_k]
         if len(selected_indices) < top_k:
             print(f"Warning: not enough points for component {self}, got {len(selected_indices)} < {top_k}")
 
-        # local index to global index
-        self.dataIndex = np.array(self.dataIndex)
-        return self.dataIndex[selected_indices]
-
+        return selected_indices
 
     def to_tuple(self) -> tuple:
         return (
@@ -348,9 +342,7 @@ class ComponentGroup:
     def __iter__(self) -> Iterator[Component]:
         return iter(self.components)
 
-    def resample(
-        self, size: int, return_shape=False, random_state: int = None
-    ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
+    def resample(self, size: int, return_shape=False, random_state: int = None) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
         """
         Sample points on the fitted geometries, with the number of points proportional to the area of the geometries
 
@@ -413,15 +405,11 @@ class ComponentGroup:
 
     @property
     def inverse_curvature(self) -> float:
-        return sum(
-            c.inverse_curvature for c in self.components if c.curvature != 0
-        ) / len(self.components)
+        return sum(c.inverse_curvature for c in self.components if c.curvature != 0) / len(self.components)
 
     @property
     def inverse_total_curvature(self) -> float:
-        return sum(
-            c.inverse_total_curvature for c in self.components if c.curvature != 0
-        )
+        return sum(c.inverse_total_curvature for c in self.components if c.curvature != 0)
 
     @property
     def total_cur_area(self) -> float:
@@ -457,23 +445,18 @@ class ComponentGroup:
         return np.array([c.param3 for c in self.components])
 
     @staticmethod
-    def fit(
-        data, split_config={}, analyze_config={}, component_config={}
-    ) -> "ComponentGroup":
-        components = dataSplit2Components(
-            data, **split_config, component_config=component_config
-        )
+    def fit(data, split_config={}, analyze_config={}, component_config={}) -> "ComponentGroup":
+        components = dataSplit2Components(data, **split_config, component_config=component_config)
         for comp in components:
             comp.analysis(data=data, **analyze_config)
         return ComponentGroup(components)
-
 
     def get_typical_indices(
         self,
         top_k: int,
         selectable_indices: np.ndarray = None,
     ) -> np.ndarray:
-        '''
+        """
         Get the typical indices of the components in the group
 
         Parameters
@@ -487,11 +470,12 @@ class ComponentGroup:
         -------
         np.ndarray
             the typical indices of the components in the group as a 2D array of int
-        '''
+        """
         return np.array([comp.get_typical_indices(top_k, selectable_indices) for comp in self])
 
     def filter(self, f: Callable[[Component], bool]) -> "ComponentGroup":
         return ComponentGroup(list(filter(f, self)))
+
 
 class ComponentGroups:
     def __init__(self, arg, **kwargs):
@@ -503,9 +487,7 @@ class ComponentGroups:
     @overload
     def __getitem__(self, key: EllipsisType | SupportsIndex) -> "ComponentGroups": ...
 
-    def __getitem__(
-        self, key: int | np.integer | EllipsisType | SupportsIndex
-    ) -> "ComponentGroup | ComponentGroups":
+    def __getitem__(self, key: int | np.integer | EllipsisType | SupportsIndex) -> "ComponentGroup | ComponentGroups":
         if isinstance(key, (int, np.integer)):
             return self.groups[key]
         elif isinstance(key, (EllipsisType, SupportsIndex)):
@@ -604,9 +586,8 @@ def encodeData(point, l=-5, r=15) -> int:
     #     + int(point[3])
     return int(index)
 
-def dataSplit2Components(
-    data, l=-5, r=15, constraint=100, scale=1, component_config: dict = {}
-) -> list[Component]:
+
+def dataSplit2Components(data, l=-5, r=15, constraint=100, scale=1, component_config: dict = {}) -> list[Component]:
     r *= scale
     l *= scale
     comp_list_data = [[] for _ in range(((r - l) ** DIMENSION))]
@@ -619,13 +600,8 @@ def dataSplit2Components(
         # comp_list_data[index].append((d, index))
         # comp_list_data[index].append(d)
     # print(comp_list)
-    comp_list_data = [
-        (i, lst) for i, lst in enumerate(comp_list_data) if len(lst) >= constraint
-    ]
+    comp_list_data = [(i, lst) for i, lst in enumerate(comp_list_data) if len(lst) >= constraint]
     # print(comp_list_data[0][0])
-    comp_list = [
-        Component(lst[0], lst[1], **component_config) for lst in comp_list_data
-    ]
+    comp_list = [Component(lst[0], lst[1], **component_config) for lst in comp_list_data]
     # print(comp_list[1].__dict__)
     return comp_list
-
