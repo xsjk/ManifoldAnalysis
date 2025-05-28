@@ -6,12 +6,15 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "ipykernel>=6.29.5",
-    "matplotlib>=3.10.0",
+    "matplotlib>=3.10.3",
     "netcdf4>=1.7.2",
-    "plotly>=5.24.1",
-    "rich>=13.9.4",
-    "scikit-learn>=1.6.0",
-    "sympy>=1.13.3",
+    "plotly>=6.1.2",
+    "rich>=14.0.0",
+    "scikit-learn>=1.6.1",
+    "sympy>=1.14.0",
     "tqdm>=4.67.1",
-    "xarray>=2024.11.0",
+    "xarray>=2025.4.0",
 ]
+
+[tool.ruff]
+target-version = "py312"
