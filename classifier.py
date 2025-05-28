@@ -1,16 +1,17 @@
 import os
-import pandas as pd
+from typing import Any, Literal
+
 import numpy as np
+import pandas as pd
 import xarray as xr
+from sklearn.base import BaseEstimator, ClassifierMixin, is_classifier
 from sklearn.model_selection import StratifiedKFold
+
 from component import ComponentGroups
 from core import Core, use_dim_type
-from typing import Any, Literal
-from sklearn.base import BaseEstimator, ClassifierMixin, is_classifier
 
 
 class ManifoldClassifier(ClassifierMixin, BaseEstimator):
-
     use_dim: use_dim_type
     manifolds_cache: ComponentGroups
 
@@ -28,8 +29,6 @@ class ManifoldClassifier(ClassifierMixin, BaseEstimator):
         self.classify_config = classify_config
         self.use_dim = use_dim
 
-
-
     def fit(self, X: xr.DataArray, y: xr.DataArray) -> "ManifoldClassifier":
         assert X.ndim == 3
         assert y.ndim == 1
@@ -43,8 +42,7 @@ class ManifoldClassifier(ClassifierMixin, BaseEstimator):
 
         # split X in to classes as y
         self.classes_ = np.unique(y)
-        assert len(self.classes_) == len(self.cluster_configs), \
-            "Number of classes must match the number of cluster configs"
+        assert len(self.classes_) == len(self.cluster_configs), "Number of classes must match the number of cluster configs"
 
         self.cores = [Core(data=X[y == i].values, dataType=f"{i}") for i in self.classes_]
         for i, (core, cluster_config) in enumerate(zip(self.cores, self.cluster_configs)):
@@ -66,9 +64,7 @@ class ManifoldClassifier(ClassifierMixin, BaseEstimator):
     def predict_proba(self, X: xr.DataArray | np.ndarray) -> np.ndarray:
         if isinstance(X, xr.DataArray):
             X = X.values
-        pred_scores = self.mixed_core.classify_with_typical(
-            data=X, use_dim=self.use_dim, **self.classify_config
-        )
+        pred_scores = self.mixed_core.classify_with_typical(data=X, use_dim=self.use_dim, **self.classify_config)
         pred_scores_split = np.split(pred_scores, self.mixed_nodes, axis=-1)
         pred_scores = np.vstack([s.max(axis=-1) for s in pred_scores_split])
         pred_scores /= pred_scores.sum(axis=0, keepdims=True)
@@ -79,64 +75,54 @@ class ManifoldClassifier(ClassifierMixin, BaseEstimator):
         proba = self.predict_proba(X)
         return np.argmax(proba, axis=-1)
 
-    def score(self, X, y):
+    def score(self, X, y, sample_weight=None):
         return (self.predict(X) == y).mean()
+
+    @property
+    def typical_indices(self) -> np.ndarray:
+        return np.unique(np.vstack(getattr(self.mixed_core, f"{self.classify_config['dist_type']}_typical_data")[self.use_dim].indices).flatten())
 
 
 assert is_classifier(ManifoldClassifier("4D4D", [], {}, {}))
 
 if __name__ == "__main__":
-
-    from tqdm import tqdm
-    import concurrent.futures
-    import xarray
-    from sklearn.model_selection import cross_validate
-    from core import use_dim_type
     import argparse
+    import concurrent.futures
     import warnings
-    import rich
-    from sklearn.exceptions import UndefinedMetricWarning
 
-    warnings.filterwarnings(
-        "ignore",
-        category=UndefinedMetricWarning,
-        message="Precision is ill-defined.*"
-    )
+    import rich
+    import xarray
+    from sklearn.exceptions import UndefinedMetricWarning
+    from sklearn.model_selection import cross_validate
+    from tqdm import tqdm
+
+    from core import use_dim_type
+
+    warnings.filterwarnings("ignore", category=UndefinedMetricWarning, message="Precision is ill-defined.*")
 
     data_AD = np.load("data/AD.npy")
     data_NL = np.load("data/Normal.npy")
-    protein_coding_indices = pd.read_csv('data/protein_coding_ID.csv', index_col=0).index.to_numpy()
+    protein_coding_indices = pd.read_csv("data/protein_coding_ID.csv", index_col=0).index.to_numpy()
 
-    X = np.concatenate([data_AD, data_NL], axis=0)
-    y = np.concatenate([np.ones(len(data_AD), dtype=np.int8),
-                        np.zeros(len(data_NL), dtype=np.int8)], axis=0)
-    X = xr.DataArray(X, dims=['person', 'gene', 'section'], coords={'person': np.arange(X.shape[0])})
-    y = xr.DataArray(y, dims=['person'], coords={'person': np.arange(y.shape[0])})
+    X_arr = np.concatenate([data_AD, data_NL], axis=0)
+    y_arr: np.ndarray = np.concatenate([np.ones(len(data_AD), dtype=np.int8), np.zeros(len(data_NL), dtype=np.int8)], axis=0)
+    X: xr.DataArray = xr.DataArray(X_arr, dims=["person", "gene", "section"], coords={"person": np.arange(X_arr.shape[0])})
+    y: xr.DataArray = xr.DataArray(y_arr, dims=["person"], coords={"person": np.arange(y_arr.shape[0])})
     # print(X.shape, y.shape)
 
-    parser = argparse.ArgumentParser(
-        description="Manifold Classifier Cross-Validation")
-    parser.add_argument("--max_n1", type=int, default=10,
-                        help="Maximum value for n1 group range")
-    parser.add_argument("--max_n2", type=int, default=10,
-                        help="Maximum value for n2 group range")
-    parser.add_argument("--max_k", type=int, default=30,
-                        help="Maximum value for k top range")
-    parser.add_argument("--score_agg_method", type=str, default="mean",
-                        help="Method to aggregate scores")
-    parser.add_argument("--dist_type", type=str, choices=["default", "sphere", "plane", "hausdorff"], default="default",
-                        help="Distance type for classification")
-    parser.add_argument("--n_jobs", type=int, default=128,
-                        help="Number of parallel")
-    parser.add_argument("--n_splits", type=int, default=5,
-                        help="Number of splits for cross-validation")
-    parser.add_argument("--random_state", type=int, default=42,
-                        help="Random state for cross-validation")
+    parser = argparse.ArgumentParser(description="Manifold Classifier Cross-Validation")
+    parser.add_argument("--max_n1", type=int, default=10, help="Maximum value for n1 group range")
+    parser.add_argument("--max_n2", type=int, default=10, help="Maximum value for n2 group range")
+    parser.add_argument("--max_k", type=int, default=30, help="Maximum value for k top range")
+    parser.add_argument("--score_agg_method", type=str, default="mean", help="Method to aggregate scores")
+    parser.add_argument("--dist_type", type=str, choices=["default", "sphere", "plane", "hausdorff"], default="default", help="Distance type for classification")
+    parser.add_argument("--n_jobs", type=int, default=128, help="Number of parallel")
+    parser.add_argument("--n_splits", type=int, default=5, help="Number of splits for cross-validation")
+    parser.add_argument("--random_state", type=int, default=42, help="Random state for cross-validation")
     parser.add_argument("--output_dir", type=str, default=".")
     parser.add_argument("--verbose", action="store_true", default=False)
 
     args = parser.parse_args()
-
 
     max_n1_group_range: int = args.max_n1
     max_n2_group_range: int = args.max_n2
@@ -153,10 +139,7 @@ if __name__ == "__main__":
 
     os.makedirs(args.output_dir, exist_ok=True)
 
-    output_file = os.path.join(
-        args.output_dir,
-        f"cv_scores_{n_splits}fold_{random_state}.nc"
-    )
+    output_file = os.path.join(args.output_dir, f"cv_scores_{n_splits}fold_{random_state}.nc")
 
     if verbose:
         rich.print(f"Output file: {output_file}")
@@ -189,11 +172,9 @@ if __name__ == "__main__":
         "roc_auc",
     ]
 
-    cv = StratifiedKFold(n_splits=n_splits, shuffle=True,
-                         random_state=random_state)
+    cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
 
-
-    old_params = {'use_dim': [], 'n1': [], 'n2': [], 'k': []}
+    old_params = {"use_dim": [], "n1": [], "n2": [], "k": []}
 
     if os.path.exists(output_file):
         if verbose:
@@ -209,29 +190,17 @@ if __name__ == "__main__":
             print(old_params)
 
         cv_scores = cv_scores.reindex(
-            use_dim=sorted(set(use_dim_range) | set(old_params['use_dim'].values)),
-            n1=sorted(set(n1_group_range) | set(old_params['n1'].values)),
-            n2=sorted(set(n2_group_range) | set(old_params['n2'].values)),
-            k=sorted(set(k_top_range) | set(old_params['k'].values)),
+            use_dim=sorted(set(use_dim_range) | set(old_params["use_dim"].values)),
+            n1=sorted(set(n1_group_range) | set(old_params["n1"].values)),
+            n2=sorted(set(n2_group_range) | set(old_params["n2"].values)),
+            k=sorted(set(k_top_range) | set(old_params["k"].values)),
         )
 
     else:
-
         cv_scores = xarray.DataArray(
-            np.zeros((len(use_dim_range),
-                      len(n1_group_range),
-                      len(n2_group_range),
-                      len(k_top_range),
-                      len(scoring) + 2, n_splits)),
-            dims=['use_dim', 'n1', 'n2', 'k', 'metric', 'fold'],
-            coords={
-                'use_dim': use_dim_range,
-                'n1': n1_group_range,
-                'n2': n2_group_range,
-                'k': k_top_range,
-                'metric': ['fit_time', 'score_time'] + [f'test_{metric}' for metric in scoring],
-                'fold': range(n_splits)
-            }
+            np.zeros((len(use_dim_range), len(n1_group_range), len(n2_group_range), len(k_top_range), len(scoring) + 2, n_splits)),
+            dims=["use_dim", "n1", "n2", "k", "metric", "fold"],
+            coords={"use_dim": use_dim_range, "n1": n1_group_range, "n2": n2_group_range, "k": k_top_range, "metric": ["fit_time", "score_time"] + [f"test_{metric}" for metric in scoring], "fold": range(n_splits)},
         )
 
     new_params = cv_scores.coords
@@ -241,54 +210,38 @@ if __name__ == "__main__":
 
     def typical_analyzer(cgs: ComponentGroups, people: np.ndarray, attr_mean: np.ndarray):
         total_curvature, mean_area = attr_mean
-        typical_person_index = np.argmin(
-            (cgs.total_curvatures[people] - total_curvature) ** 2
-            + (cgs.areas[people] - mean_area) ** 2
-        )
+        typical_person_index = np.argmin((cgs.total_curvatures[people] - total_curvature) ** 2 + (cgs.areas[people] - mean_area) ** 2)
         return people[typical_person_index]
 
     ManifoldClassifier.manifolds_cache = Core(data=X.values, dataType="all").fit_manifolds()
 
     def evaluate_model(use_dim: use_dim_type, n: tuple[int, int], k: int) -> tuple[use_dim_type, tuple[int, int], int, dict[str, np.ndarray]]:
-
         scores = cross_validate(
             ManifoldClassifier(
                 use_dim=use_dim,
                 fit_manifold_config=dict(),
-                cluster_configs=[dict(
-                    n_group=i,
-                    feature_getter=feature_getter
-                ) for i in n],
-                analyze_config=dict(
-                    top_k=k,
-                    selectable_indices=protein_coding_indices,
-                    typical_analyzer=typical_analyzer
-                ),
-                classify_config=dict(
-                    score_agg_method=score_agg_method,
-                    dist_type=dist_type
-                ),
-            ), X, y, cv=cv, n_jobs=1,# type: ignore
-            scoring=scoring
+                cluster_configs=[dict(n_group=i, feature_getter=feature_getter) for i in n],
+                analyze_config=dict(top_k=k, selectable_indices=protein_coding_indices, typical_analyzer=typical_analyzer),
+                classify_config=dict(score_agg_method=score_agg_method, dist_type=dist_type),
+            ),
+            X.values,
+            y.values,
+            cv=cv,
+            n_jobs=1,  # type: ignore
+            scoring=scoring,
         )
 
         return use_dim, n, k, scores
 
     try:
-
         with concurrent.futures.ProcessPoolExecutor(max_workers=n_jobs) as executor:
             future_to_params = [
                 executor.submit(evaluate_model, use_dim, (n1, n2), k)
-                for use_dim in new_params['use_dim'].values
-                for n1 in new_params['n1'].values
-                for n2 in new_params['n2'].values
-                for k in new_params['k'].values
-                if not (
-                    use_dim in old_params['use_dim'] and
-                    n1 in old_params['n1'] and
-                    n2 in old_params['n2'] and
-                    k in old_params['k']
-                ) or cv_scores.loc[use_dim, n1, n2, k, 'fit_time'].isnull().any()
+                for use_dim in new_params["use_dim"].values
+                for n1 in new_params["n1"].values
+                for n2 in new_params["n2"].values
+                for k in new_params["k"].values
+                if not (use_dim in old_params["use_dim"] and n1 in old_params["n1"] and n2 in old_params["n2"] and k in old_params["k"]) or cv_scores.loc[use_dim, n1, n2, k, "fit_time"].isnull().any()
             ]
             progress_bar = tqdm(total=len(future_to_params), desc="Evaluating models" if verbose else f"Evaluating models to {output_file}")
             for future in concurrent.futures.as_completed(future_to_params):
@@ -303,7 +256,6 @@ if __name__ == "__main__":
         pass
 
     finally:
-
         try:
             cv_scores.to_netcdf(output_file)
             if verbose:
