@@ -13,6 +13,7 @@ from clusterer import GMMClusterer
 from component import (
     ComponentGroup,
     ComponentGroups,
+    NotEnoughPointsError,
     Shape,
 )
 from grouper import GroupResult
@@ -228,51 +229,58 @@ class Core:
                 indices.append(np.empty((0, top_k), dtype=int))
                 continue
 
-            selected_indices = typical_components.get_typical_indices(top_k, selectable_indices)
-            if selectable_indices is not None:
-                assert np.all(np.isin(selected_indices, selectable_indices))
-            assert selected_indices.shape == (n_components, top_k)
+            def process_indices(typical_components, top_k, selectable_indices):
+                try:
+                    selected_indices = typical_components.get_typical_indices(top_k, selectable_indices)
+                except NotEnoughPointsError:
+                    return None, None, None
+                else:
+                    if selectable_indices is not None:
+                        assert np.all(np.isin(selected_indices, selectable_indices))
+                    assert selected_indices.shape == (n_components, top_k)
 
-            n_people = len(people)
+                    n_people = len(people)
+                    selected_data = self.data[people][:, selected_indices, :]
+                    assert selected_data.shape == (n_people, n_components, top_k, 4)
 
-            selected_data = self.data[people][:, selected_indices, :]
-            assert selected_data.shape == (n_people, n_components, top_k, 4)
+                    match analyze_dist:
+                        case "sphere":
+                            centers = typical_components.param1
+                            radii = typical_components.param2
+                            assert centers.shape == (n_components, 4)
+                            assert radii.shape == (n_components,)
+                            args = [centers, radii]
+                        case "plane":
+                            x0s = typical_components.param1
+                            normals = typical_components.param2
+                            assert x0s.shape == (n_components, 4)
+                            assert normals.shape == (n_components, 4)
+                            args = [x0s, normals]
+                        case "hausdorff":
+                            typical_person_data = self.data[typical_person, selected_indices, :]
+                            assert typical_person_data.shape == (n_components, top_k, 4)
+                            args = [typical_person_data]
+                        case _:
+                            raise ValueError(f"Invalid value for analyze_dist: {analyze_dist}")
 
-            match analyze_dist:
-                case "sphere":
-                    centers = typical_components.param1
-                    radii = typical_components.param2
-                    assert centers.shape == (n_components, 4)
-                    assert radii.shape == (n_components,)
-                    args = [centers, radii]
-                case "plane":
-                    x0s = typical_components.param1
-                    normals = typical_components.param2
-                    assert x0s.shape == (n_components, 4)
-                    assert normals.shape == (n_components, 4)
-                    args = [x0s, normals]
-                case "hausdorff":
-                    typical_person_data = self.data[typical_person, selected_indices, :]
-                    assert typical_person_data.shape == (n_components, top_k, 4)
-                    args = [typical_person_data]
-                case _:
-                    raise ValueError(f"Invalid value for analyze_dist: {analyze_dist}")
+                    distance = dist_f(selected_data, *args)
+                    if analyze_dist == "hausdorff":
+                        assert distance.shape == (n_people, n_components)
+                    else:  # sphere or plane
+                        assert distance.shape == (n_people, n_components, top_k)
 
-            distance = dist_f(selected_data, *args)
-            if analyze_dist == "hausdorff":
-                assert distance.shape == (n_people, n_components)
-            else:  # sphere or plane
-                assert distance.shape == (n_people, n_components, top_k)
+                    means: np.ndarray = distance.mean(axis=0)
+                    stds: np.ndarray = distance.std(axis=0)
+                    if analyze_dist == "hausdorff":
+                        assert means.shape == (n_components,)
+                        assert stds.shape == (n_components,)
+                    else:  # sphere or plane
+                        assert means.shape == (n_components, top_k)
+                        assert stds.shape == (n_components, top_k)
 
-            means: np.ndarray = distance.mean(axis=0)
-            stds: np.ndarray = distance.std(axis=0)
-            if analyze_dist == "hausdorff":
-                assert means.shape == (n_components,)
-                assert stds.shape == (n_components,)
-            else:  # sphere or plane
-                assert means.shape == (n_components, top_k)
-                assert stds.shape == (n_components, top_k)
+                    return means, stds, selected_indices
 
+            means, stds, selected_indices = process_indices(typical_components, top_k, selectable_indices)
             distance_means.append(means)
             distance_stds.append(stds)
             indices.append(selected_indices)
@@ -428,6 +436,12 @@ class Core:
                 analysis_data.distance_stds,
             )
         ):
+            if selected_indices is None:
+                if verbose:
+                    print(f"Warning: not enought points for group {group_index}")
+                pred_scores[:, group_index] = eps
+                continue
+
             n_components, n_points_per_component = selected_indices.shape
 
             if n_components == 0:

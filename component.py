@@ -1,5 +1,6 @@
 import json
 import os
+import logging
 from functools import cache
 from types import EllipsisType
 from typing import (
@@ -37,6 +38,14 @@ class Shape:
     PLANE = "plane"
     CYLINDER = "cyclinder"
     CONE = "cone"
+
+
+class NotEnoughPointsError(RuntimeError):
+    """
+    Exception raised when there are not enough points to fit a shape.
+    """
+
+    pass
 
 
 class Component:
@@ -307,7 +316,7 @@ class Component:
         # select top k points
         selected_indices = selected_indices[:top_k]
         if len(selected_indices) < top_k:
-            print(f"Warning: not enough points for component {self}, got {len(selected_indices)} < {top_k}")
+            raise NotEnoughPointsError(f"Not enough points to select {top_k} typical indices, only {len(selected_indices)} available.")
 
         return selected_indices
 

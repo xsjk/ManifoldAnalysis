@@ -224,8 +224,8 @@ if __name__ == "__main__":
                 analyze_config=dict(top_k=k, selectable_indices=protein_coding_indices, typical_analyzer=typical_analyzer),
                 classify_config=dict(score_agg_method=score_agg_method, dist_type=dist_type),
             ),
-            X.values,
-            y.values,
+            X,
+            y,
             cv=cv,
             n_jobs=1,  # type: ignore
             scoring=scoring,
