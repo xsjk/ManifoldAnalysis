@@ -57,6 +57,7 @@ class ClusterResult:
 
 use_dim_type = Literal["1D1D", "1D4D", "4D4D"]
 analyze_dist_type = Literal["default", "sphere", "plane", "hausdorff"]
+score_agg_type = Literal["max", "mean", "median", "min"]
 typical_analyzer_type = Callable[
     [
         ComponentGroups,
@@ -70,9 +71,6 @@ feature_getter_type = Callable[
     [ComponentGroups],
     np.ndarray[tuple[int, int], np.dtype[np.floating]],
 ]
-
-
-score_agg_type = Literal["max", "mean", "median", "min"]
 
 
 class Core:
