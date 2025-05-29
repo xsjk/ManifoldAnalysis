@@ -1,7 +1,7 @@
 import pickle
 from dataclasses import dataclass
 from functools import wraps
-from typing import Callable, Literal
+from typing import Callable, Literal, Self
 
 import numpy as np
 from joblib import Parallel, delayed
@@ -628,7 +628,7 @@ class Core:
     def show_classification_result(self):
         utils.show_classification_result(self.true_label, self.pred_scores)
 
-    def split(self, n_splits: int = 10, random_state: int = 42) -> list["Core"]:
+    def split(self, n_splits: int = 10, random_state: int = 42) -> list[Self]:
         """
         Split the data into n_splits parts
 
@@ -649,7 +649,7 @@ class Core:
         indices = np.random.permutation(len(self.data))
         split_indices = np.array_split(indices, n_splits)
 
-        cores = [
+        return [
             Core(
                 data=self.data[split_index],
                 dataType=self.dataType[split_index],
@@ -658,14 +658,7 @@ class Core:
             for split_index in split_indices
         ]
 
-        # for attr in ('clusterer', 'cluster_result'):
-        #     if hasattr(self, attr):
-        #         for core in cores:
-        #             setattr(core, attr, getattr(self, attr))
-
-        return cores
-
-    def __add__(self, other: "Core") -> "Core":
+    def __add__(self, other: Self) -> Self:
         obj = object.__new__(Core)
         obj.data = np.vstack([self.data, other.data])
         obj.component_groups = self.component_groups + other.component_groups
@@ -678,6 +671,11 @@ class Core:
                     if key in getattr(self, attr) and key in getattr(other, attr):
                         getattr(obj, attr)[key] = getattr(self, attr)[key] + getattr(other, attr)[key]
         return obj
+
+    def get_typical_indices(self, use_dim: use_dim_type, dist_type: analyze_dist_type) -> np.ndarray:
+        if dist_type == "default":
+            return np.unique(np.append(*(self.get_typical_indices(use_dim, d) for d in ("plane", "sphere"))))
+        return np.unique(np.vstack(getattr(self, f"{dist_type}_typical_data")[use_dim].indices).flatten())
 
 
 if __name__ == "__main__":

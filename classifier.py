@@ -8,7 +8,7 @@ from sklearn.base import BaseEstimator, ClassifierMixin, is_classifier
 from sklearn.model_selection import StratifiedKFold
 
 from component import ComponentGroups
-from core import Core, use_dim_type
+from core import Core, analyze_dist_type, use_dim_type
 
 
 class ManifoldClassifier(ClassifierMixin, BaseEstimator):
@@ -80,7 +80,7 @@ class ManifoldClassifier(ClassifierMixin, BaseEstimator):
 
     @property
     def typical_indices(self) -> np.ndarray:
-        return np.unique(np.vstack(getattr(self.mixed_core, f"{self.classify_config['dist_type']}_typical_data")[self.use_dim].indices).flatten())
+        return self.mixed_core.get_typical_indices(self.use_dim, self.classify_config["dist_type"])
 
 
 assert is_classifier(ManifoldClassifier("4D4D", [], {}, {}))
