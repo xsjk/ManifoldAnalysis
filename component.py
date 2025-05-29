@@ -1,6 +1,3 @@
-import json
-import os
-import logging
 from functools import cache
 from types import EllipsisType
 from typing import (
@@ -8,6 +5,7 @@ from typing import (
     Iterable,
     Iterator,
     Literal,
+    Self,
     Sequence,
     SupportsIndex,
     overload,
@@ -453,12 +451,12 @@ class ComponentGroup:
     def param3(self) -> np.ndarray:
         return np.array([c.param3 for c in self.components])
 
-    @staticmethod
-    def fit(data, split_config={}, analyze_config={}, component_config={}) -> "ComponentGroup":
+    @classmethod
+    def fit(cls, data, split_config={}, analyze_config={}, component_config={}) -> Self:
         components = dataSplit2Components(data, **split_config, component_config=component_config)
         for comp in components:
             comp.analysis(data=data, **analyze_config)
-        return ComponentGroup(components)
+        return cls(components)
 
     def get_typical_indices(
         self,
@@ -482,8 +480,8 @@ class ComponentGroup:
         """
         return np.array([comp.get_typical_indices(top_k, selectable_indices) for comp in self])
 
-    def filter(self, f: Callable[[Component], bool]) -> "ComponentGroup":
-        return ComponentGroup(list(filter(f, self)))
+    def filter(self, f: Callable[[Component], bool]) -> Self:
+        return self.__class__(list(filter(f, self)))
 
 
 class ComponentGroups:
@@ -494,9 +492,9 @@ class ComponentGroups:
     @overload
     def __getitem__(self, key: int | np.integer) -> ComponentGroup: ...
     @overload
-    def __getitem__(self, key: EllipsisType | SupportsIndex) -> "ComponentGroups": ...
+    def __getitem__(self, key: EllipsisType | SupportsIndex) -> Self: ...
 
-    def __getitem__(self, key: int | np.integer | EllipsisType | SupportsIndex) -> "ComponentGroup | ComponentGroups":
+    def __getitem__(self, key: int | np.integer | EllipsisType | SupportsIndex) -> ComponentGroup | Self:
         if isinstance(key, (int, np.integer)):
             return self.groups[key]
         elif isinstance(key, (EllipsisType, SupportsIndex)):
@@ -512,8 +510,8 @@ class ComponentGroups:
     def __iter__(self) -> Iterator[ComponentGroup]:
         return iter(ComponentGroup(g) for g in self.groups)
 
-    def __add__(self, other: "ComponentGroups") -> "ComponentGroups":
-        return ComponentGroups([*self.groups, *other.groups])
+    def __add__(self, other: Self) -> Self:
+        return self.__class__([*self.groups, *other.groups])
 
     @property
     def usedim(self):

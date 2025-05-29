@@ -1,5 +1,5 @@
 import os
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
 import numpy as np
 import pandas as pd
@@ -29,7 +29,7 @@ class ManifoldClassifier(ClassifierMixin, BaseEstimator):
         self.classify_config = classify_config
         self.use_dim = use_dim
 
-    def fit(self, X: xr.DataArray, y: xr.DataArray) -> "ManifoldClassifier":
+    def fit(self, X: xr.DataArray, y: xr.DataArray) -> Self:
         assert X.ndim == 3
         assert y.ndim == 1
         assert X.shape[0] == y.shape[0]

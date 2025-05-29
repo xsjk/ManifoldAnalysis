@@ -33,8 +33,8 @@ class AnalysisData:
     def num_groups(self) -> int:
         return len(self.people)
 
-    def __add__(self, other: "AnalysisData") -> "AnalysisData":
-        return AnalysisData(
+    def __add__(self, other: Self) -> Self:
+        return self.__class__(
             people=np.hstack([self.people, other.people + self.num_people]),
             distance_means=self.distance_means + other.distance_means,
             distance_stds=self.distance_stds + other.distance_stds,
@@ -48,8 +48,8 @@ class ClusterResult:
     group_result: GroupResult
     cluster_means: np.ndarray
 
-    def __add__(self, other: "ClusterResult") -> "ClusterResult":
-        return ClusterResult(
+    def __add__(self, other: Self) -> Self:
+        return self.__class__(
             group_result=self.group_result + other.group_result,
             cluster_means=np.append(self.cluster_means, other.cluster_means),
         )
